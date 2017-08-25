@@ -1,0 +1,466 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+
+use vars qw/ %opt /;
+
+sub usage {
+	print << "EOF";
+
+usage : $0 [-h] [-d] -c <config> [-l <logfile>]
+
+     -h : Help message
+	 -d : background execute
+	 -c : job schedule config file
+	 -l : job execute log file
+
+config file layout
+     mon  week day hour min start_date command
+     
+     공통 : 
+        1,2,3 : 1, 2, 3에 적용
+        1-3   : 1부터 3에 적용
+
+     Week :
+        0=Sun,1=Mon,...6=Sat
+        1\@2  : 첫째 화요일
+        0\@2  : 마지막주 화요일
+        -1\@2 : (마지막-1)주 화요일
+     
+     Day :
+        \@2 : 시작일자 기준 2일마다 수행
+        0  : 월말
+        -m : 월말로 부터 -m일
+     
+     eg)
+      * 1\@1 * 20 30 2008/01/01 command
+      ==> 2008/01/01이후 매월 첫째 월요일 20:30 에 command 수행
+     
+      * * -1 20 30 2008/01/01 command
+      ==> 2008/01/01이후 매월 월말 기준 1일전 20:30분에 command 수행
+     
+      * * \@3 20 30 2008/01/01 command
+      ==> 2008/01/01이후 3일간격으로 20:30분에 command 수행
+     
+EOF
+	exit;
+}
+
+#
+# Command line options processing
+#
+sub init()
+{
+    use Getopt::Std;
+    my $opt_string = 'hc:l:d';
+    getopts( "$opt_string", \%opt ) or usage();
+    usage() if $opt{h};
+}
+
+sub log_print {
+	if( not defined $opt{l} ) {
+		return 0;
+	}
+	open FD, ">>", $opt{l};
+	printf FD @_;
+	close FD;
+}
+
+&init();
+
+my $config = $opt{c};
+if( not -f $config ) {
+	die "cannot find config file\n";
+}
+
+&daemon_init() if $opt{d};
+
+my $last_time = &mtime;
+
+while( 1 ) {
+	my $now = &mtime;
+	if( $now == $last_time ) {
+		sleep 1;
+		next;
+	}
+	my @joblist = &load_config( $config );
+	foreach my $job (@joblist) {
+		if( &check_job( $now, %{$job} ) ) {
+			log_print( "%s : [%s] %s\n", &strtime( "%Y/%m/%d %H:%M:%S" ), $job->{config}, $job->{command} );
+			&bexec( $job->{command} );
+		}
+	}
+	$last_time = $now;
+}
+
+sub mtime {
+	my $t = shift;
+	$t = time if not defined $t;
+
+	my @now = localtime( $t );
+	$now[0] = 0;
+
+	return mktime( @now );
+}
+
+sub dtime {
+	my $t = shift;
+	$t = time if not defined $t;
+
+	my @now = localtime( $t );
+	$now[0] = 0;
+	$now[1] = 0;
+	$now[2] = 0;
+
+	return mktime( @now );
+}
+
+sub load_config {
+	my ($config) = @_;
+
+	open FP, $config;
+
+	my @joblist = ();
+
+	while( my $line = <FP> ) {
+		chomp $line;
+		next if( $line =~ /^#/ );
+		if( $line =~/^\s*(\S+.*\S)\s*$/ ) {
+			my %job = &job_parser( $1 );
+			push @joblist, \%job;
+		}
+	}
+	close FP;
+
+	return @joblist;
+}
+
+sub check_job {
+	my ($t, %job) = @_;
+	my $today = &dtime( $t );
+	my @now = localtime( $t );
+	my $mon = $now[4]+1;
+	my $hour = $now[2];
+	my $min  = $now[1];
+
+	if( $job{start_date} > $today ) {
+		return 0;
+	}
+	if( &check_range( $mon, $job{month} ) and
+		&check_week( $job{start_date}, $t, $job{week} ) and
+		&check_day( $job{start_date}, $t, $job{day} ) and
+		&check_range( $hour, $job{hour} ) and
+		&check_range( $min, $job{min} ) ) {
+		return 1;
+	}
+	return 0;
+}
+
+sub check_range {
+	my ($num,  $param) = @_;
+
+	if( $param eq '*' ) {
+		return 1;
+	}
+	my @m = split /,/, $param;
+	foreach my $item (@m) {
+		if( $item =~ /^(\d+)-(\d+)$/ ) {
+			if( int($1) <= $num and $num <= int($2) ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^(\d+)$/ ) {
+			if( int($1) == $num ) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+sub get_last_day {
+	my ($year, $month) = @_;
+	our @lastday = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 );
+	my $e = 0;
+	
+	$e = 1 if ($month == 2) and (($year%400 == 0) or (($year%100 != 0) and ($year % 4 == 0)));
+
+	return $lastday[$month-1] + $e;
+}
+
+sub check_day {
+	my ($start_t, $t, $param) = @_;
+	my @now = localtime( $t );
+	my $year = $now[5]+1900;
+	my $mon = $now[4];
+	my $day = $now[3];
+	my @lastday = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 );
+
+	if( $param eq '*' ) {
+		return 1;
+	}
+	my @m = split /,/, $param;
+	foreach my $item (@m) {
+		if( $item =~ /^(\d+)-(\d+)$/ ) {
+			if( int($1) <= $day and $day <= int($2) ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^(\d+)$/ ) {
+			if( int($1) == 0 ) {
+				if( &get_last_day( $year, $mon+1 ) == $day ) {
+					return 1;
+				}
+			}
+			elsif( int($1) == $day ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^-(\d+)$/ ) {
+			if( (&get_last_day( $year, $mon+1 )-int($1)) == $day ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^@(\d+)$/ ) {
+			my $diffday = int( ( &dtime( $t ) - &dtime( $start_t ) ) / 86400 );
+			if( $diffday % int($1) == 0 ) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+sub check_week {
+	my ($start_t, $t, $param) = @_;
+	my @now = localtime( $t );
+	my $day = $now[3];
+	my $mon = $now[4];
+	my $year = $now[5]+1900;
+	my $wday = $now[6];
+
+	if( $param eq '*' ) {
+		return 1;
+	}
+	my @m = split /,/, $param;
+	foreach my $item (@m) {
+		if( $item =~ /^(\d+)-(\d+)$/ ) {
+			if( int($1) <= $wday and $wday <= int($2) ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^(\d+)$/ ) {
+			if( int($1) == $wday ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^([1-9]\d*)@(\d+)$/ ) {
+			my $nth = int($1);
+			my $w   = int($2);
+			my $dt  = $day;
+			my $n   = 0;
+
+			next if $w != $wday;
+
+			while( $dt > 0 ) {
+				$n++;
+				$dt -= 7;
+			}
+			if( $nth == $n ) {
+				return 1;
+			}
+		}
+		elsif( $item =~ /^(0+|-(\d+))@(\d+)$/ ) {
+			my $nth = int($1);
+			my $w   = -int($3);
+			my $lastday = &get_last_day( $year, $mon + 1 );
+			my $n   = 0;
+			my $dt  = $day;
+
+			next if $w != $wday;
+
+			while( $dt < $lastday ) {
+				$n++;
+				$dt += 7;
+			}
+			if( $nth == $n ) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+# Mon  Week Day Hour Min Start Date
+#-------------------------------
+# *    *    *   20   05  2008/11/20
+# *    *    @5  20   05  2008/11/20
+# *    1-6  *   20   05  2008/11/20
+# 1-11 *    1   20   05  2008/11/20
+# *    1@1  *   20   05  2008/11/20
+
+sub job_parser {
+	my $str = shift;
+
+	my @s = split /\s+/, $str;
+	my $dt;
+	my $t;
+	my %job;
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{month} = $1;
+		$str = $';
+	}
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{week} = $1;
+		$str = $';
+	}
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{day} = $1;
+		$str = $';
+	}
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{hour} = $1;
+		$str = $';
+	}
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{min} = $1;
+		$str = $';
+	}
+	if( $str =~/^\s*(\S+)\s+/ ) {
+		$job{start_date} = $1;
+		$str = $';
+		if( $job{start_date} =~ /^(\d\d\d\d)\/(\d\d)\/(\d\d)$/ ) {
+			$job{start_date} = mktime( 0, 0, 0, int($3), int($2) - 1, int($1) - 1900 );
+		}
+	}
+	$job{command} = $str;
+	$job{config} = "$job{month} $job{week} $job{day} $job{hour} $job{min} " . &strtime( "%Y/%m/%d", $job{start_date} );
+
+	return %job;
+}
+
+
+##---------------------------------------------------------------------------##
+##	Init(): Become a daemon.
+##
+sub daemon_init {
+	use Carp;
+
+	my $oldmode = shift || 0;
+	my($pid, $sess_id, $i);
+
+## Fork and exit parent
+	if ($pid = &Fork) { exit 0; }
+
+## Detach ourselves from the terminal
+	croak "Cannot detach from controlling terminal" unless $sess_id = POSIX::setsid();
+
+## Prevent possibility of acquiring a controling terminal
+	if (!$oldmode) {
+		$SIG{'HUP'} = 'IGNORE';
+		if ($pid = &Fork) { exit 0; }
+	}
+
+## Change working directory
+#	chdir "/";
+
+## Clear file creation mask
+#	umask 0;
+
+## Close open file descriptors
+#	foreach $i (0 .. OpenMax) { POSIX::close($i); }
+
+## Reopen stderr, stdout, stdin to /dev/null
+	open(STDIN,  "+>/dev/null");
+#    open(STDOUT, "+>&STDIN");
+#    open(STDERR, "+>&STDIN");
+
+	$oldmode ? $sess_id : 0;
+}
+
+##---------------------------------------------------------------------------##
+##	Fork(): Try to fork if at all possible.  Function will croak
+##	if unable to fork.
+##
+sub Fork {
+	use POSIX;
+
+	my($pid);
+FORK: {
+		  if (defined($pid = fork)) {
+			  return $pid;
+		  } elsif ($! =~ /No more process/) {
+			  sleep 5;
+			  redo FORK;
+		  } else {
+			  croak "Can't fork: $!";
+		  }
+	  }
+}
+
+
+sub strtime {
+	use POSIX qw(strftime);
+
+	my ($format,$time) = @_;
+	$time = time if not defined $time;
+
+	my @t = localtime( $time );
+
+	return strftime( $format, $t[0], $t[1], $t[2], $t[3], $t[4], $t[5], $t[6], $t[7], $t[8] );
+}
+
+sub strtotime {
+	use POSIX qw(mktime);
+
+	my ($str,$format) = @_;
+	my @t;
+#	my @t = strptime( $str, $format );
+
+	return mktime( @t );
+}
+
+sub bexec {
+	my @cmd = @_;
+
+	$SIG{'CLD'} = 'IGNORE';
+
+	my $pid = &Fork;
+
+	if( $pid > 0 ) {
+		return 1;
+	}
+	elsif( $pid == 0 ) {
+		# initilize signal
+		$SIG{ 'INT' }  = \&signal_handler;
+		$SIG{ 'TERM' } = \&signal_handler;
+		$SIG{ 'QUIT' } = \&signal_handler;
+
+		my $ret = exec( @cmd );
+
+		log_print( "exec($ret) error: @cmd\n" );
+
+
+		exit;
+	}
+	return 0;
+}
+
+
+# signal handler for sigtem, sigint and sigquit
+
+sub signal_handler {
+	my( $signame ) = @_;
+	my $date = &strdate( "YYYY/MM/DD hh:mm:ss" );
+	print STDERR << "EOF"
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Notice : Caught a SIG$signame--shutting down
+Time   : $date
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+EOF
+}
+

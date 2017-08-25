@@ -1,0 +1,15 @@
+.PHONY : all bin lib pre post
+
+-include  /users/crabdev/kblee/deploy/crab010/scm_env.inc
+
+all : bin
+
+pre : 
+	$(MAKE) -C /users/crabdev/kblee/deploy/crab010/out/NPFM pre
+
+lib : pre
+	$(MAKE) -C /users/crabdev/kblee/deploy/crab010/out/NPFM lib
+
+bin : lib
+	$(MAKE) -C /users/crabdev/kblee/deploy/crab010/out/NPFM bin
+

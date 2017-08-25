@@ -1,0 +1,6 @@
+#!/bin/ksh
+
+mkdir -p ${SCM_BHOME}/deploy
+mkdir -p ${SCM_BHOME}/clean
+ln -s ${SCM_MHOME}/pkg ${SCM_BHOME}/pkg
+

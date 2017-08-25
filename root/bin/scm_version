@@ -1,0 +1,7 @@
+#!/bin/ksh
+if [ -f ${SCM_HOME}/deploy/.profile ]
+then
+	. ${SCM_HOME}/deploy/.profile > /dev/null
+	echo ${SCM_DEPLOY} ${SCM_VERSION}
+fi
+

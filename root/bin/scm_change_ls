@@ -1,0 +1,75 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::UTIL;
+
+debug_mode( 0 );
+
+use vars qw/ %opt /;
+
+my $scm = new SCM;
+my @srange = ();
+my @erange = ();
+
+sub exist_in_range {
+	my ($r) = @_;
+	for( my $i = 0; $i <= $#srange; $i++ ) {
+		if( $srange[$i] <= $r and ( $r <= $erange[$i] or $erange[$i] == -1 ) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+sub init()
+{
+	use Getopt::Std;
+    my $opt_string = 'd:h';
+    getopts( "$opt_string", \%opt ) or usage();
+    usage() if $opt{h};
+
+	foreach my $r (@ARGV) {
+		if( $r =~ /^([0-9]+)-([0-9]+)$/ ) {
+			push @srange, $1;
+			push @erange, $2;
+		}
+		elsif( $r =~ /^([0-9]+)-$/ ) {
+			push @srange, $1;
+			push @erange, -1;
+		}
+		else {
+			push @srange, $r;
+			push @erange, $r;
+		}
+	}
+}
+
+&init();
+
+$scm->deploy( $opt{d} ) if $opt{d};
+
+foreach my $package ($scm->packages) {
+	my $cmd = $scm->svn_command('ls', '-R', '-v', $scm->repos . "/pkg/$package/" . $scm->version($package) );
+
+	open FH, "$cmd |";
+	my $head = sprintf "Deploy: %s Package: %s(%s)\n", $scm->deploy, $package, $scm->version($package);
+	my $count = 0;
+	while( (my $line = <FH>) ) {
+		if( $line =~ /^\s*([0-9]+)\s/ ) {
+			if( &exist_in_range( $1 ) ) {
+				print $head if $count == 0;
+				print $line;
+				$count++;
+			}
+		}
+	}
+	if( $count > 0 ) {
+		print "$count files(dirs) are modified.\n";
+	}
+}
+

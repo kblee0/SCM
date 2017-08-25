@@ -1,0 +1,109 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Version;
+use SCM::UTIL;
+#
+# Globals
+#
+use vars qw/ %opt /;
+
+debug_mode( 0 );
+
+my $deploy;
+my $scm;
+
+&main();
+
+#
+# Command line options processing
+#
+sub init()
+{
+    use Getopt::Std;
+    my $opt_string = 'rdnh';
+    getopts( "$opt_string", \%opt ) or usage();
+    usage() if $opt{h} or $#ARGV > 0 or ($opt{n} and $opt{d}) or ($opt{d} and $opt{n}) or (not $opt{r} and $opt{d});
+
+	$scm = new SCM::Version;
+
+	if( $#ARGV == 0 ) {
+		$deploy = shift @ARGV;
+	}
+	else {
+		$deploy = $scm->deploy;
+	}
+}
+
+#
+# Message about this program and how to use it
+#
+sub usage()
+{
+    print STDERR << "EOF";
+
+usage : scmver [-r [-d]] [-n] [deployment]
+
+ -r        : display released version.
+ -d        : display developing version (*default).
+ -n        : display version number only.
+ -h        : display help message.
+
+EOF
+    exit 0;
+}
+
+sub main {
+	&init();
+
+	if( $opt{r} ) {
+		&scmver_cmd_release_ver( $deploy );
+	}
+	else {
+		&scmver_cmd_ver( $deploy ) ;
+	}
+
+	exit 0;
+}
+
+sub scmver_cmd_ver {
+	my ($deploy) = @_;
+
+	$scm->deploy( $deploy ) if defined $deploy;
+
+	if( not $scm->set_current_version() ) {
+		die "\n$deploy is not releasable deployment.\n\n";
+	}
+
+	if( $opt{n} ) {
+		printf "%s\n", $scm->version_name();
+	}
+	else {
+		printf "\n$deploy: Current develope version is %s\n\n", $scm->version_name();
+	}
+}
+
+sub scmver_cmd_release_ver {
+	my ($deploy) = @_;
+
+	$scm->deploy( $deploy ) if defined $deploy;
+
+	if( not $scm->set_release_version() ) {
+		die "\n$deploy is not releasable deployment.\n\n";
+	}
+
+	if( $opt{n} ) {
+		printf "%s\n", $scm->version_name();
+	}
+	else {
+		printf "\n$deploy: Last release version is %s\n\n", $scm->version_name();
+		if( $opt{d} ) {
+			system "cat", $scm->release_info;
+		}
+	}
+}
+

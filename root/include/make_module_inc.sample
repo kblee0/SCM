@@ -1,0 +1,43 @@
+# define binaries
+BINS=ctest cpptest pcpptest makecp
+
+ctest_MAIN_OBJ    = ctest.o
+cpptest_MAIN_OBJ  = cpptest.o
+pcpptest_MAIN_OBJ = pcpptest.o
+makecp_MAIN_OBJ   = testcp.sh
+
+# define additional include path (optional)
+INCDIRS+=-I$(PACKAGE_rf)/include
+
+# define default library name (optional)
+LIB_NAME=libNOT_DEF.a
+
+# define user define libs (optional)
+LIBS=libEX1.a libEX2.a
+
+libEX1.a_OBJS = ex1.o
+libEX2.a_OBJS = ex2.o
+
+# user library dependencies (optional)
+USER_LIBS=-lEX1
+
+# system library dependencies (optional)
+LDLIBS+=-lmm
+LDDIRS+=-L/usr/lib
+
+YFLAGS+=-d
+DEBUG_VALUES=SCM_HOME SCM_MHOME INCDIRS LDDIRS SCM_ADMIN VPATH TMP1 TMP2
+
+# define target
+ctest : ctest.o
+	$(CCL)
+
+cpptest : cpptest.o
+	$(CXXL)
+
+pcpptest : pcpptest.o
+	$(CXXL)
+
+makecp : testcp.sh
+	$(SHL)
+

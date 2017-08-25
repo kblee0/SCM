@@ -1,0 +1,124 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+use Term::ANSIColor;
+use Sys::Hostname;
+
+my $db = "$ENV{'SCM_ROOT'}/data/announce.db";
+
+my %tags = (
+		"hostname" => 1,
+	);
+
+if( $ARGV[0] eq '-d' and -r $ARGV[1] ) {
+	$db = $ARGV[1];
+}
+
+open FD, $db;
+
+my $schedule;
+my $message;
+while( my $line = <FD> ) {
+	chomp $line;
+	if( $line =~ /^BEGIN\s*;/ ) {
+		&announce;
+	}
+}
+
+close FD;
+
+exit 0;
+
+sub announce {
+	my $schedule = undef;
+	my $message = undef;
+
+	while( my $line = <FD> ) {
+		chomp $line;
+		if( $line =~ /^END\s*;/ ) {
+			last;
+		}
+		elsif( $line =~ /^SCHEDULE\s*:/ ) {
+			$schedule = $line;
+		}
+		elsif( $line =~ /^MESSAGE\s*:/ ) {
+			$message = '';
+		}
+		else {
+			if( defined $message ) {
+				$message .= &parse_tag( $line ) . "\n";
+			}
+		}
+	}
+	if( $schedule =~ /\s*START\s*=\s*(\d+)\/(\d+)\/(\d+)\s*END\s*=\s*(\d+)\/(\d+)\/(\d+)\s*/ ) {
+		my $start = sprintf "%04d%02d%02d", $1, $2, $3;
+		my $end   = sprintf "%04d%02d%02d", $4, $5, $6;
+		my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+		my $now   = sprintf "%04d%02d%02d", $year+1900, $mon+1, $mday;
+		if( $start le $now and $now le $end ) {
+			print $message;
+		}
+	}
+}
+
+sub parse_tag {
+	my $line = &parse_color( $_[0] );
+	my $res = '';
+	while( 1 ) {
+		if( $line =~ /\\\[\s*(\w[\w\s]*\w)\s*\]/ ) {
+			my $tag = $1;
+			if( $tag ne 'hostname' and defined $tags{$tag} ) {
+				$res .= $` . $tags{$tag};
+				$line = $';
+			}
+			else {
+				$res .= $` . $&;
+				$line = $';
+			}
+		}
+		else {
+			$res .= $line;
+			last;
+		}
+	}
+	$line = $res;
+	if( $line =~ /\\\[\s*hostname\s*\]/ ) {
+		my $pre = $`;
+		my $suf = $';
+		my $hostname = hostname;
+		my @hostname = `banner $hostname`;
+		$res = '';
+		foreach my $s (@hostname) {
+			chomp $s;
+			$res .= "$pre$s$suf\n";
+		}
+		chomp $res;
+	}
+	return $res;
+}
+
+sub parse_color {
+	my $line = shift;
+	my $res = '';
+	while( 1 ) {
+		if( $line =~ /\\\[\s*(\w[\w\s]*\w)\s*\]/ ) {
+			my $tag = $1;
+			if( not defined $tags{$tag} ) {
+				$res .= $` . color( $tag );
+				$line = $';
+			}
+			else {
+				$res .= $` . $&;
+				$line = $';
+			}
+		}
+		else {
+			$res .= $line;
+			last;
+		}
+	}
+	return $res;
+}
+

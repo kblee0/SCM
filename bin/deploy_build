@@ -1,0 +1,93 @@
+#!/bin/ksh
+DEPLOY=$1
+REFRESH=$2
+CLEAN=$3
+BUILD=$4
+CONFIRM=$5
+
+LOG_DATE=`date +'%Y%m%d_%H%M%S'`
+LOG_DIR=${HOME}/log/${DEPLOY}
+
+RC=0
+
+function _signal_handler {
+	echo "The deploy_build($DEPLOY) caught signal at" `date` >> ${HOME}/log/stop_build.log
+	stop_build $DEPLOY
+	exit 9
+}
+
+trap _signal_handler INT TERM
+
+if [ x"$JENKINS_BUILD" = "xY" ]
+then
+	LOG_METHOD='2>&1 | tee'
+	LOG_SUFFIX=''
+else
+	LOG_METHOD='>'
+	LOG_SUFFIX='2>&1'
+fi
+
+if [ x"$PRE_COMMAND" != x ]
+then
+	eval ${PRE_COMMAND} $LOG_METHOD ${LOG_DIR}/pre_build_${LOG_DATE}.log ${LOG_SUFFIX}
+fi
+
+if [ ! -d ${LOG_DIR} ]
+then
+	mkdir -p ${LOG_DIR}
+fi
+
+if [ ${REFRESH} = "Y" ]
+then
+	eval scmadmin refresh ${DEPLOY} $LOG_METHOD ${LOG_DIR}/refresh_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=1
+	fi
+fi
+
+if [ ${CLEAN} = "Y" ]
+then
+	eval scmadmin clean ${DEPLOY} $LOG_METHOD ${LOG_DIR}/clean_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=2
+	fi
+else
+	eval scmadmin clean ${DEPLOY} $LOG_METHOD ${LOG_DIR}/clean_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=3
+	fi
+	/usr/bin/cp -r ${SCM_MHOME}/deploy/${DEPLOY}/* ${SCM_BHOME}/deploy/${DEPLOY}
+fi
+
+if [ ${BUILD} = "Y" ]
+then
+	eval scmadmin make_deploy ${DEPLOY} -i ${MAKE_ARGS} $LOG_METHOD ${LOG_DIR}/build_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=4
+	fi
+	eval report_error ${LOG_DIR}/build_${LOG_DATE}.log $LOG_METHOD ${LOG_DIR}/report_${LOG_DATE}.log
+fi
+
+if [ ${CONFIRM} = "Y" ]
+then
+	eval scmadmin confirm ${DEPLOY} $LOG_METHOD ${LOG_DIR}/confirm_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=5
+	fi
+fi
+
+if [ x"$POST_COMMAND" != x ]
+then
+	eval ${POST_COMMAND} $LOG_METHOD ${LOG_DIR}/post_build_${LOG_DATE}.log ${LOG_SUFFIX}
+	if [ $? -ne 0 ]
+	then
+		RC=6
+	fi
+fi
+
+exit $RC

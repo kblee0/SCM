@@ -1,0 +1,2 @@
+#!/bin/ksh
+kill_ptree deploy_build $1

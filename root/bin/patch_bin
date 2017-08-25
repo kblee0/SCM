@@ -1,0 +1,107 @@
+#!/bin/ksh
+
+function usage {
+	echo "patch_bin <file> [...<file>] <target dir>"
+	exit 1
+}
+
+function checkDir {
+	if [ $1 = "Y" ]
+	then
+		remsh $RHOST -l $RUSER "if [ -d $2 ]; then echo 0; else echo 1; fi"
+	else
+		if [ -d $2 ]; then echo 0; else echo 1; fi
+	fi
+}
+
+function checkFile {
+	if [ $1 = "Y" ]
+	then
+		remsh $RHOST -l $RUSER "if [ -f $2 ]; then echo 0; else echo 1; fi"
+	else
+		if [ -f $2 ]; then echo 0; else echo 1; fi
+	fi
+}
+
+function moveFile {
+	if [ $1 = "Y" ]
+	then
+		echo "move : ${RUSER}@${RHOST}:$2 --> ${RUSER}@${RHOST}:$3"
+		remsh $RHOST -l $RUSER mv $2 $3
+	else
+		echo move : $2 $3
+		mv $2 $3
+	fi
+}
+
+function copyFile {
+	if [ $1 = "Y" ]
+	then
+		echo "copy : $2 --> ${RUSER}@${RHOST}:$3"
+		rcp $2 ${RUSER}@${RHOST}:$3
+	else
+		echo "copy : $2 --> $3"
+		cp $2 $3
+	fi
+}
+
+eval TARGET=\${$#}
+REMOTE=N
+
+TARGET=`echo $TARGET | sed 's|/$||'`
+RUSER=`echo $TARGET | sed 's|^\(.*\)@\(.*\):\(.*\)$|\1|'`
+RHOST=`echo $TARGET | sed 's|^\(.*\)@\(.*\):\(.*\)$|\2|'`
+RDIR=`echo $TARGET | sed 's|^\(.*\)@\(.*\):\(.*\)$|\3|'`
+
+SRCS=$*
+
+# check target dir
+if [ x"$RUSER" != x"$TARGET" ]
+then
+	REMOTE=Y
+	TARGET=$RDIR
+fi
+
+if [ "`checkDir $REMOTE $TARGET`" -eq 1  ]
+then
+	echo $TARGET directory not found.
+	usage
+fi
+
+# check source files
+i=0
+for SRC in ${SRCS}
+do
+	i=$((i+1))
+	if [ $i -eq $# ]
+	then
+		break
+	fi
+	if [ ! -f ${SRC} ]
+	then
+		echo $SRC file not found.
+		usage
+		break
+	fi
+	PATCH_FILES="${PATCH_FILES} ${SRC}"
+done
+
+if [ $i -ne $# ]
+then
+	echo $SRC is not file.
+	usage
+fi
+
+DATE=`date '+%Y%m%d'`
+
+# patch files
+for FILE in ${PATCH_FILES}
+do
+	FNAME=`basename $FILE`
+	if [ `checkFile $REMOTE ${TARGET}/${FNAME}` -eq 0 ]
+	then
+		moveFile $REMOTE ${TARGET}/${FNAME} ${TARGET}/${FNAME}_${DATE}
+	fi
+	copyFile $REMOTE ${FILE} ${TARGET}
+done
+

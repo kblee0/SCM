@@ -1,0 +1,121 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::UTIL;
+use File::Path;
+
+debug_mode( 0 );
+
+my $deploy = shift @ARGV;
+
+my $scm = new SCM;
+
+$scm->deploy( $deploy ) if defined $deploy;
+
+my @files = ();
+my %bin;
+my %cfg;
+my %dupbin;
+my %dupcfg;
+
+foreach my $package ($scm->packages) {
+	debug_print( "scndir " . $scm->package( $package ) );
+
+	push @files, get_dirs( $scm->package( $package ), "fsp" );
+}
+
+foreach my $file (@files) {
+	my ($dirname, $basename) = ( '.', '' );
+
+	if( $file =~ /^(.*\/)([^\/]*)$/ ) {
+		$dirname = $1;
+		$basename = $2;
+	}
+	if( $file =~ /\.cfg$/ or $file =~/\.CFG$/ ) {
+		if( not defined $cfg{$basename} ) {
+			$cfg{$basename} = $file;
+		}
+		else {
+			if( not $dupcfg{$basename}->{name} ) {
+				$dupcfg{$basename}->{name} = $basename;
+				push @{$dupcfg{$basename}->{list}}, $cfg{$basename};
+				debug_print( $cfg{$basename} );
+			}
+			push @{$dupcfg{$basename}->{list}}, $file;
+			debug_print( $file );
+		}
+	}
+####elsif( $file =~ /\.sh$/ ) {
+####	if( not defined $bin{$basename} ) {
+####		$bin{$basename} = $file;
+####	}
+####	else {
+####		if( not $dupbin{$basename}->{name} ) {
+####			$dupbin{$basename}->{name} = $basename;
+####			push @{$dupbin{$basename}->{list}}, $bin{$basename};
+####			debug_print( $bin{$basename} );
+####		}
+####		push @{$dupbin{$basename}->{list}}, $file;
+####		debug_print( $file );
+####	}
+####}
+	elsif( $file =~/\/make\.[^\.\s\/]+\.inc$/ or $file =~ /make\.inc$/ ) {
+		foreach my $binname ( &getbins( $file ) ) {
+			my $fname = $dirname . $binname;
+			debug_print( "check $fname" );
+			if( not defined $bin{$binname} ) {
+				$bin{$binname} = $fname;
+			}
+			else {
+				if( not $dupbin{$binname}->{name} ) {
+					$dupbin{$binname}->{name} = $binname;
+					push @{$dupbin{$binname}->{list}}, $bin{$binname};
+					debug_print( $bin{$binname} );
+				}
+				push @{$dupbin{$binname}->{list}}, $fname;
+				debug_print( $fname );
+			}
+		}
+	}
+}
+
+foreach my $name (keys %dupbin) {
+	print "\n$name:\n";
+	foreach my $file (@{$dupbin{$name}->{list}}) {
+		print "    $file\n";
+	}
+}
+
+sub getbins {
+	my $file = shift;
+	my $bin;
+
+	open FD, $file;
+
+	while( my $line = <FD> ) {
+		chomp $line;
+
+		if( $line =~ /^\s*BINS\s*=\s*(.+)\\$/ ) {
+			$bin = $1;
+			while( $line = <FD> ) {
+				chomp $line;
+
+				$bin .= ' ' . $line;
+				last unless $line =~ /\\$/;
+			}
+		}
+		elsif( $line =~ /^\s*BINS\s*=\s*(.+)$/ ) {
+			$bin = $1;
+			last;
+		}
+	}
+
+	close FD;
+	return split /\s+/, $bin;
+}
+

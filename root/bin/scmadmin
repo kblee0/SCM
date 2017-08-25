@@ -1,0 +1,508 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::Package;
+use SCM::UTIL;
+use SCM::Help::scmadmin;
+
+use File::Path;
+
+debug_mode( 0 );
+
+my $cmd = shift @ARGV;
+
+my %command = (
+	"addpackage"    => \&scmadmin_cmd_addpackage,
+	"branch"        => \&scmadmin_cmd_branch,
+	"vercopy"       => \&scmadmin_cmd_vercopy,
+	"vercopy_deploy"=> \&scmadmin_cmd_vercopy_deploy,
+	"delpackage"    => \&scmadmin_cmd_delpackage,
+	"refresh"       => \&scmadmin_cmd_refresh,
+	"clean"         => \&scmadmin_cmd_clean,
+	"make"          => \&scmadmin_cmd_scm_build_call,
+	"make_package"  => \&scmadmin_cmd_scm_build_call,
+	"make_deploy"   => \&scmadmin_cmd_scm_build_call,
+	"confirm"       => \&scmadmin_cmd_confirm,
+	"diffdeploy"    => \&scmadmin_cmd_diffdeploy,
+	"help"          => \&scmadmin_cmd_help,
+	"?"             => \&scmadmin_cmd_help,
+	"h"             => \&scmadmin_cmd_help,
+);
+
+sub scmadmin_cmd_help {
+	my ($cmd, $subcommand) = @_;
+
+	if( defined $subcommand and not $command{ $subcommand } ) {
+		print "\"$subcommand\": unknown command.\n\n";
+	}
+	else {
+		scmadmin_help( @_ );
+	}
+	exit 0;
+}
+
+#debug_mode( 1 );
+
+my $scm = new SCM;
+
+if( not &is_mlogin and not &is_blogin ) {
+	print "scmadmin: Permission denied.\n";
+#	exit 9;
+}
+
+if( not defined $command{ $cmd } ) {
+	print "Unknown command '$cmd'\n" if defined $cmd;
+	print "Type 'scmadmin help' for usage.\n";
+	exit 9;
+}
+
+
+my $rc = $command{ $cmd }->( $cmd, @ARGV );
+if( $rc eq 1 ) {
+	exit 0;
+}
+exit 1;
+
+sub check_mlogin {
+	my ($cmd) = @_;
+	
+	my $login = getusername();
+	my $muser = get_file_user( $scm->home(1) );
+	if( not &is_mlogin ) {
+		die "scmadmin $cmd: Permission denied($login). Login to $muser.\n";
+	}
+}
+
+sub check_blogin {
+	my ($cmd) = @_;
+
+	my $login = getusername();
+	my $buser = get_file_user( $scm->bhome );
+	if( not &is_blogin ) {
+		die "scmadmin $cmd: Permission denied($login). Login to $buser.\n";
+	}
+}
+
+sub is_mlogin {
+	if( get_file_user( $scm->home(1) ) eq getusername() ) {
+		return 1;
+	}
+	return 0;
+}
+
+sub is_blogin {
+	if( get_file_user( $scm->bhome(1) ) eq getusername() ) {
+		return 1;
+	}
+	return 0;
+}
+
+sub scmadmin_cmd_clean {
+	my ($cmd, @args) = @_;
+
+	&check_blogin( $cmd );
+
+	$ENV{ 'SCM_HOME' } = $ENV{ 'SCM_BHOME' };
+
+	my $cleandir = $ENV{ 'SCM_BHOME' } . '/clean';
+	my $bscm = new SCM;
+
+	my ($deploy) = @args;
+
+	if( defined $deploy ) {
+		$bscm->deploy( $deploy );
+	}
+	else {
+		$deploy = $bscm->deploy;
+	}
+	if( not -d $cleandir ) {
+		if( not mkdir( $cleandir, 0755 ) ) {
+			print "cannot create $cleandir. $!\n";
+			return 0;
+		}
+	}
+	my $tmpdir = sprintf "%s/%s_%s", $cleandir, $bscm->deploy, strtime( '%Y%m%d_%H%M%S' );
+
+	if( -d $tmpdir ) {
+		print "clean tmp directory already exist.($tmpdir)\n";
+		return 0;
+	}
+	if( not mkdir( $tmpdir, 0755 ) ) {
+		print "cannot create $tmpdir. $!\n";
+		return 0;
+	}
+
+	if( not rename( $bscm->bin, "$tmpdir/bin" ) ) {
+		printf "cannot rename %s to %s. $!\n", $bscm->bin, "$tmpdir/bin";
+		return 0;
+	}
+	if( not rename( $bscm->lib, "$tmpdir/lib" ) ) {
+		printf "cannot rename %s to %s. $!\n", $bscm->lib, "$tmpdir/lib";
+		return 0;
+	}
+	if( not rename( $bscm->cfg, "$tmpdir/cfg" ) ) {
+		printf "cannot rename %s to %s. $!\n", $bscm->cfg, "$tmpdir/cfg";
+		return 0;
+	}
+	if( not rename( $bscm->out, "$tmpdir/out" ) ) {
+		printf "cannot rename %s to %s. $!\n", $bscm->out, "$tmpdir/out";
+		return 0;
+	}
+	mkdir $scm->bin, 0755;
+	mkdir $scm->lib, 0755;
+	mkdir $scm->cfg, 0755;
+	mkdir $scm->out, 0755;
+
+	print "clean $tmpdir ...\n";
+	rmtree $tmpdir;
+
+	return 1;
+}
+
+sub scmadmin_cmd_scm_build_call {
+	my ($cmd, @args) = @_;
+
+	&check_blogin( $cmd );
+
+	$ENV{ 'SCM_HOME' } = $ENV{ 'SCM_BHOME' };
+
+	exit system( "scm", $cmd, @args );
+}
+
+sub scmadmin_cmd_branch {
+	my ($cmd, @args) = @_;
+	my ($package, $src, $dest) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $dest ) {
+		print STDERR "argument mismatch\n";
+		return 0;
+	}
+
+	my $src_url  = "pkg/$package/$src";
+	my $dest_url = "pkg/$package/$dest";
+
+	if( $scm->check_repository( $src_url ) eq 0 ) {
+		print STDERR "Package does not exist. (name = $package, version = $src)\n";
+		return 0;
+	}
+	if( $scm->check_repository( $dest_url ) eq 1 ) {
+		print STDERR "Package alrady exist. (name = $package, version = $dest)\n";
+		return 0;
+	}
+
+	my @svn = ( 'copy', $scm->repos . "/$src_url", $scm->repos . "/$dest_url", '-m', 'scmadmin_branch' );
+
+	if( $scm->svn( @svn ) ne 0 ) {
+		return 0;
+	}
+	print "\n$package package is branched.($src ==> $dest)\n\n";
+	return 1;
+}
+
+sub scmadmin_cmd_addpackage {
+	my ($cmd, @args) = @_;
+	my ($package, $ver) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $ver ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+
+	my $url  = "pkg/$package/$ver";
+	if( $scm->check_repository( $url ) eq 1 ) {
+		print STDERR "Package alrady exist. (name = $package, version = $ver)\n";
+		return 0;
+	}
+
+	if( $scm->check_repository( "pkg/$package" ) eq 0 ) {
+		my @svn = ('mkdir', $scm->repos . "/pkg/$package", '-m', 'scmadmin_addpackage' );
+
+		if( $scm->svn( @svn ) ne 0 ) {
+			return 0;
+		}
+	}
+	my @svn = ( 'mkdir', $scm->repos . "/$url", '-m', 'scmadmin_addpackage' );
+
+	if( $scm->svn( @svn ) ne 0 ) {
+		return 0;
+	}
+	print "\n$package package is added with $ver version.\n\n";
+	return 1;
+}
+
+sub scmadmin_cmd_vercopy {
+	my ($cmd, @args) = @_;
+	my ($package, $src, $dest) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $dest ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+
+	my $src_url  = "pkg/$package/$src";
+	my $dest_url = "pkg/$package/$dest";
+
+	if( $scm->check_repository( $src_url ) eq 0 ) {
+		print STDERR "$package package does not exist. (name = $package, version = $src)\n";
+		return 0;
+	}
+	if( $scm->check_repository( $dest_url ) eq 1 ) {
+		my @svn = ('delete', $scm->repos . "/$dest_url", '-m', 'scmadmin_vercopy' );
+
+		if( $scm->svn( @svn ) ne 0 ) {
+			return 0;
+		}
+	}
+
+	my @svn = ('copy', $scm->repos . "/$src_url", $scm->repos . "/$dest_url", '-m', 'scmadmin_vercopy' );
+
+	if( $scm->svn( @svn ) ne 0 ) {
+		return 0;
+	}
+	print "\n$package package vercopy complete.($src ==> $dest)\n\n";
+	return 1;
+}
+
+sub scmadmin_cmd_vercopy_deploy {
+	my ($cmd, @args) = @_;
+	my ($src, $dest) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $dest ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+	if( not $scm->deploy( $src ) ) {
+		print STDERR "source deploy($src) does not exist.\n";
+		return 0;
+	}
+	my %src_pkg;
+	
+	foreach my $pkg ($scm->packages) {
+		$src_pkg{$pkg} = $scm->version($pkg);
+	}
+	if( not $scm->deploy( $dest ) ) {
+		print STDERR "target deploy($dest) does not exist.\n";
+		return 0;
+	}
+	foreach my $pkg (keys %src_pkg) {
+		if( $scm->version($pkg) ne '' and $scm->version($pkg) ne $src_pkg{$pkg} ) {
+			return 0 if not &scmadmin_cmd_vercopy( 'vercopy', $pkg, $src_pkg{$pkg}, $scm->version($pkg) );
+		}
+	}
+	return 1;
+}
+
+sub scmadmin_cmd_vercopy_deploy {
+	my ($cmd, @args) = @_;
+	my ($src, $dest) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $dest ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+	if( not $scm->deploy( $src ) ) {
+		print STDERR "source deploy($src) does not exist.\n";
+		return 0;
+	}
+	my %src_pkg;
+	
+	foreach my $pkg ($scm->packages) {
+		$src_pkg{$pkg} = $scm->version($pkg);
+	}
+	if( not $scm->deploy( $dest ) ) {
+		print STDERR "target deploy($dest) does not exist.\n";
+		return 0;
+	}
+	foreach my $pkg (keys %src_pkg) {
+		if( $scm->version($pkg) ne '' and $scm->version($pkg) ne $src_pkg{$pkg} ) {
+			return 0 if not &scmadmin_cmd_vercopy( 'vercopy', $pkg, $src_pkg{$pkg}, $scm->version($pkg) );
+		}
+	}
+	return 1;
+}
+
+sub scmadmin_cmd_delpackage {
+	my ($cmd, @args) = @_;
+	my ($package, $ver) = @args;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $ver ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+
+	my $url  = "pkg/$package/$ver";
+
+	if( $scm->check_repository( $url ) eq 0 ) {
+		print STDERR "Package does not exist. (name = $package, version = $ver)\n";
+		return 0;
+	}
+
+	my @svn = ( 'delete', $scm->repos . "/$url", '-m', 'scmadmin_delpackage' );
+
+	if( $scm->svn( @svn ) ne 0 ) {
+		return 0;
+	}
+	print "\n$package/$ver package is deleted.\n\n";
+	return 1;
+}
+
+sub scmadmin_cmd_refresh {
+	my ($command, @args) = @_;
+	my ($deploy) = @args;
+	my $package;
+
+	&check_mlogin( $cmd );
+
+	if( not defined $deploy ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+
+	if( not $scm->deploy( $deploy ) ) {
+		print STDERR "incorrect deployment name.\n";
+		return 0;
+	}
+
+	foreach my $package ($scm->packages) {
+		my $ver = $scm->version( $package );
+		my @cargs = ( $scm->repos . "/pkg/$package/$ver", $scm->home . "/pkg/$package/$ver" );
+
+		my @svn = ( "checkout", @cargs );
+
+		print "refresh $package/$ver package\n";
+		if($scm->svn( @svn ) ne 0 ) {
+			return 0;
+		}
+	}
+	print "\n$deploy refresh complete.\n\n";
+	return 1;
+}
+
+sub scmadmin_cmd_confirm {
+	my ($command, @args) = @_;
+	my ($deploy) = @args;
+
+	if( not defined $deploy ) {
+		print STDERR "argement mismatch\n";
+		return 0;
+	}
+
+	&check_blogin( $cmd );
+
+	if( not $scm->deploy( $deploy ) ) {
+		print STDERR "incorrect deployment name.\n";
+		return 0;
+	}
+
+	my @dirs = (
+			"$scm->{SCM_BHOME}/deploy/" . $scm->deploy . ".a",
+			"$scm->{SCM_BHOME}/deploy/" . $scm->deploy . ".b"
+		);
+
+	my $mdeploy = "$scm->{SCM_MHOME}/deploy/" . $scm->deploy;
+	my $bdeploy = "$scm->{SCM_BHOME}/deploy/" . $scm->deploy;
+	my $mdir = undef;
+	my $bdir = undef;
+
+
+	my @mstat = stat $mdeploy;
+	my @bstat = stat $bdeploy;
+
+	if( "@mstat" eq "@bstat" ) {
+		print STDERR "$mdeploy and $bdeploy is same. check directory.\n";
+		return 0;
+	}
+	# check directory
+	foreach my $dir (@dirs) {
+		if( not -d $dir ) {
+			print STDERR "$dir does not exist.\n";
+			return 0;
+		}
+		my @dirstat = stat $dir;
+
+		if( "@mstat" ne "@dirstat" ) {
+			$mdir = $dir;
+		}
+		elsif( "@bstat" ne "@dirstat" ) {
+			$bdir = $dir;
+		}
+	}
+	debug_print( "$mdeploy ==> $mdir" );
+	debug_print( "$bdeploy ==> $bdir" );
+
+	print "relinke $mdeploy ==> $mdir\n";
+	if( unlink( $mdeploy ) ne 1 ) {
+		print STDERR "Can't remove link($mdeploy): $!\n";
+		return 0;
+	}
+	if( symlink( $mdir, $mdeploy ) ne 1 ) {
+		print STDERR "Can't create link($mdeploy): $!\n";
+		return 0;
+	}
+	
+	print "relinke $bdeploy ==> $bdir\n";
+	if( unlink( $bdeploy ) ne 1 ) {
+		print STDERR "Can't remove link($bdeploy): $!\n";
+		return 0;
+	}
+	if( symlink( $bdir, $bdeploy ) ne 1 ) {
+		print STDERR "Can't create link($bdeploy): $!\n";
+		return 0;
+	}
+
+	print "\ndeploy confirm complete.\n\n";
+
+	return 1;
+}
+
+sub scmadmin_cmd_diffdeploy {
+	my ($cmd, @args) = @_;
+
+	my ($deploy, $old_rev, $new_rev) = @args;
+
+	if( not $deploy ) {
+		print STDERR "deploy name is missing\n";
+		print STDERR "Type 'scmadmin help $cmd' for usage.\n";
+		return 0;
+	}
+
+	if( not $scm->deploy( $deploy ) ) {
+		print STDERR "$deploy deploy is unknown\n";
+		print STDERR "Type 'scmadmin help $cmd' for usage.\n";
+		return 0;
+	}
+
+	if( not $old_rev ) {
+		print STDERR "old revision is missing\n";
+		print STDERR "Type 'scmadmin help $cmd' for usage.\n";
+		return 0;
+	}
+	$new_rev = "HEAD" if $new_rev eq '';
+
+	foreach my $package ($scm->packages) {
+		my @cmd = ( 'diff', '--summarize');
+		push @cmd, '--old=' . $scm->package( $package ) . "\@$old_rev";
+		push @cmd, '--new=' . $scm->package( $package ) . "\@$new_rev";
+
+		last if $scm->svn( @cmd );
+	}
+	return 1;
+}
+

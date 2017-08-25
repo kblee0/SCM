@@ -1,0 +1,15 @@
+#SunOS SUN Studio CC Compiler
+CC = cc
+CXX= CC
+AR = ar
+AR_FLAG = -xar -o
+AR2 = echo
+SO_FLAG = -b
+ARCH64  = -m64 -xarch=native
+ARCH32  = 
+ARCH    = 64
+CXX_HOME  = /opt/SUNWspro/prod
+CXX_INCS  = -I$(CXX_HOME)/include/CC/Cstd
+STLIO     = -library=rwtools7,iostream
+#CFLAGS    += -fast $(ARCH$(ARCH)) -xprefetch=yes -D__SUN -D__ARCH$(ARCH) -D_REENTRANT -mt -g
+CFLAGS    += $(ARCH$(ARCH)) -xprefetch=yes -D__SUN -D__ARCH$(ARCH) -D_REENTRANT -mt -g

@@ -1,0 +1,314 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::Package;
+use SCM::UTIL;
+
+use File::Path;
+
+debug_mode( 0 );
+
+my $cmd = shift @ARGV;
+
+my %command = (
+	"cds"   => \&scm_find_path_cds,
+	"cdout" => \&scm_find_path_cdout,
+	"cdi"   => \&scm_find_path_cdi,
+	"cdp"   => \&scm_find_path_cdp,
+);
+
+my $scm = new SCM;
+my $default_rc = undef;
+
+$command{ $cmd }->( $cmd, @ARGV );
+
+exit 0;
+
+sub scm_find_path_cds {
+	my ($package, $module) = ();
+
+	$default_rc = ".\n";
+
+	if( not -f  $scm->deploy_cfg ) {
+		print $default_rc;
+		exit 1;
+	}
+
+	if( $#ARGV eq -1 ) {
+		($package, $module) = $scm->getcw;
+		if( $module eq '' ) {
+			if( $package ne '' ) {
+				print $scm->package( $package ) . "\n";
+			}
+			else {
+				print $default_rc;
+			}
+			exit 1;
+		}
+	}
+	elsif( $#ARGV eq 0 ) {
+		$module = $ARGV[0];
+	}
+	elsif( $#ARGV eq 1 ) {
+		$package = $ARGV[0];
+		$module = $ARGV[1];
+	}
+	else {
+		print $default_rc;
+		exit 1;
+	}
+
+	if( defined $package ) {
+		my $path = &find_package_module( $package, $module );
+		if( $path eq $default_rc ) {
+			$path = &find_package_module( $package, $module, 1 );
+		}
+		print "$path\n";
+		exit 0;
+	}
+	else {
+		my ($cur_package, $cur_module) = $scm->getcw;
+		my @packages = ();
+		push @packages, $cur_package if $cur_package ne '';
+		push @packages, $scm->packages;
+
+		foreach $package ( @packages ) {
+			my $path = &find_package_module( $package, $module );
+			if( $path ne $default_rc ) {
+				print "$path\n";
+				exit 0;
+			}
+		}
+		foreach $package ( @packages ) {
+			my $path = &find_package_module( $package, $module, 1 );
+			if( $path ne $default_rc ) {
+				print "$path\n";
+				exit 0;
+			}
+		}
+		$package = $module;
+		$module  = undef;
+		if( $scm->version( $package ) ne '' and -d $scm->package( $package ) ) {
+			print $scm->package( $package ) . "\n";
+			exit 0;
+		}
+
+		print $default_rc;
+		exit 1;
+	}
+}
+
+sub scm_find_path_cdi {
+	my $package = undef;
+	my $module = undef;
+
+	$default_rc = ".\n";
+
+	if( not -f  $scm->deploy_cfg ) {
+		print $default_rc;
+		exit 1;
+	}
+
+	if( $#ARGV eq -1 ) {
+		($package, $module) = $scm->getcw;
+		if( $package eq '' ) {
+			print $default_rc;
+			exit 1;
+		}
+	}
+	elsif( $#ARGV eq 0 ) {
+		$package = $ARGV[0];
+	}
+	else {
+		print $default_rc;
+		exit 1;
+	}
+
+	my $path = $scm->package( $package ) . '/include';
+	if( -d $path ) {
+		print "$path\n";
+		exit 0;
+	}
+	$path = $scm->package( $package, 1 ) . '/include';
+	if( -d $path ) {
+		print "$path\n";
+		exit 0;
+	}
+
+	print $default_rc;
+	exit 0;
+}
+
+sub scm_find_path_cdp {
+	my $package = undef;
+	my $module = undef;
+
+	$default_rc = ".\n";
+
+	if( not -f  $scm->deploy_cfg ) {
+		print $default_rc;
+		exit 1;
+	}
+
+	if( $#ARGV eq -1 ) {
+		($package, $module) = $scm->getcw;
+		if( $package eq '' ) {
+			print $default_rc;
+			exit 1;
+		}
+	}
+	elsif( $#ARGV eq 0 ) {
+		$package = $ARGV[0];
+	}
+	else {
+		print $default_rc;
+		exit 1;
+	}
+
+	my $path = $scm->package( $package );
+	if( -d $path ) {
+		print "$path\n";
+		exit 0;
+	}
+	$path = $scm->package( $package, 1 );
+	if( -d $path ) {
+		print "$path\n";
+		exit 0;
+	}
+
+	print $default_rc;
+	exit 0;
+}
+
+sub scm_find_path_cdout {
+	my ($package, $module) = ();
+
+	if( not -f  $scm->deploy_cfg ) {
+		print $default_rc;
+		exit 1;
+	}
+
+	$default_rc = ".\n";
+	$default_rc = $scm->out(1) . "\n" if -d $scm->out(1);
+	$default_rc = $scm->out . "\n" if -d $scm->out;
+
+	if( $#ARGV eq -1 ) {
+		($package, $module) = $scm->getcw;
+		if( $package eq '' ) {
+			print $default_rc;
+			exit 1;
+		}
+	}
+	elsif( $#ARGV eq 0 ) {
+		$module = $ARGV[0];
+	}
+	elsif( $#ARGV eq 1 ) {
+		$package = $ARGV[0];
+		$module = $ARGV[1];
+	}
+	else {
+		print $default_rc;
+		exit 1;
+	}
+
+	if( defined $package ) {
+		my $path = &find_deploy_module( $package, $module );
+		if( $path eq $default_rc ) {
+			$path = &find_deploy_module( $package, $module, 1 );
+		}
+		print "$path\n";
+		exit 0;
+	}
+	else {
+		my ($cur_package, $cur_module) = $scm->getcw;
+		my @packages = ();
+		push @packages, $cur_package if $cur_package ne '';
+		push @packages, $scm->packages;
+
+		foreach $package ( @packages ) {
+			my $path = &find_deploy_module( $package, $module );
+			if( $path ne $default_rc ) {
+				print "$path\n";
+				exit 0;
+			}
+		}
+		foreach $package ( @packages ) {
+			my $path = &find_deploy_module( $package, $module, 1 );
+			if( $path ne $default_rc ) {
+				print "$path\n";
+				exit 0;
+			}
+		}
+		print $default_rc;
+		exit 1;
+	}
+}
+
+sub find_package_module {
+	my ($package, $module, $mhome_ind) = @_;
+
+	my $path = $scm->package( $package, $mhome_ind ) . "/$module";
+
+	if( -d $path ) {
+		return $path;
+	}
+	$path = &find_sub_dirs( $scm->package( $package, $mhome_ind ), $module );
+	if( defined $path ) {
+		return $scm->package( $package, $mhome_ind ) . "/$path";
+	}
+	
+	return $default_rc;
+}
+
+sub find_deploy_module {
+	my ($package, $module, $mhome_ind) = @_;
+
+	my $path = $scm->out($mhome_ind) . "/$package/$module";
+
+	if( -d $path ) {
+		return $path;
+	}
+	return $default_rc;
+}
+
+sub find_sub_dirs {
+	my ($basepath, $dir, $depth ) = @_;
+
+	my $dh;
+	my @dirs;
+
+	opendir $dh, $basepath;
+
+	while( ( my $name = readdir( $dh ) ) ) {
+		if( $name eq '.' or $name eq '..' or $name eq '.svn' ) {
+			next;
+		}
+		if( -d "$basepath/$name" ) {
+			push @dirs, $name;
+		}
+		if( $name eq $dir ) {
+			closedir $dh;
+			$dir = "$depth/$dir" if defined $depth;
+			return $dir;
+		}
+	}
+	foreach my $name (@dirs) {
+		my $ndepth = undef;
+		if( defined $depth ) {
+			$ndepth = "$depth/$name";
+		}
+		else {
+			$ndepth = $name;
+		}
+		$name = find_sub_dirs( "$basepath/$name", $dir, $ndepth );
+		if( $name ne '' ) {
+			return $name;
+		}
+	}
+	return undef;
+}

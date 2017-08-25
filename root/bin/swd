@@ -1,0 +1,12 @@
+#!/bin/ksh
+
+if [ x"$SCM_DEPLOY" = x ]
+then
+	echo "current working deployment is unknown. please set deploy."
+else
+	echo
+	echo "current working deployment is $SCM_DEPLOY"
+	echo
+fi
+
+exit 0

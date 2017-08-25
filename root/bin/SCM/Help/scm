@@ -1,0 +1,4 @@
+  A log message must be provided, but it can be empty.  If it is not
+  given by a --message or --file option, an editor will be started.
+  If any targets are (or contain) locked items, those will be
+  unlocked after a successful commit.

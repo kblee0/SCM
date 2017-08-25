@@ -1,0 +1,220 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+#
+# Globals
+#
+use vars qw/ %opt /;
+
+#
+# Command line options processing
+#
+sub init()
+{
+    use Getopt::Std;
+    my $opt_string = 'nh';
+    getopts( "$opt_string", \%opt ) or usage();
+    usage() if $opt{h};
+}
+
+#
+# Message about this program and how to use it
+#
+sub usage()
+{
+    print STDERR << "EOF";
+
+This program does...
+
+usage: $0 [-n] <command>
+
+ -n        : do not display exit status
+
+example: $0 -n ls
+
+EOF
+    exit;
+}
+
+init();
+
+if( $#ARGV < 0 ) {
+	print STDERR "usage : $0 [-n] <command>\n";
+	exit( 1 );
+}
+
+&bexec( @ARGV );
+
+sub bexec {
+	my @cmd = @_;
+
+	&daemon_init;
+
+	# initilize signal
+	$SIG{ 'INT' }  = \&signal_handler;
+	$SIG{ 'TERM' } = \&signal_handler;
+	$SIG{ 'QUIT' } = \&signal_handler;
+
+	print "\n";
+
+	my $bench;
+
+	$bench = &start_bench;
+
+	my $ret;
+	if( $opt{n} ) {
+		$ret = exec( @cmd );
+	}
+	else {
+		$ret = system( @cmd );
+	}
+
+	$bench = &stop_bench( $bench );
+
+	my $exit_value  = $ret >> 8;
+	my $signal_num  = $ret & 127;
+	my $dumped_core = $ret & 128;
+
+	print STDERR << "EOF";
+
+--------------------------------------------------
+pid         : $$
+command     : @ARGV
+exit value  : $exit_value
+signal num  : $signal_num
+dumped core : $dumped_core
+start time  : $bench->{start_time}
+end time    : $bench->{end_time}
+elespe secs : $bench->{total_secs}
+--------------------------------------------------
+
+EOF
+		return	$exit_value;
+}
+
+
+# signal handler for sigtem, sigint and sigquit
+
+sub signal_handler {
+	my( $signame ) = @_;
+	my $date = &strdate( "YYYY/MM/DD hh:mm:ss" );
+	print STDERR << "EOF"
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Notice : Caught a SIG$signame--shutting down
+Time   : $date
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+EOF
+}
+
+
+##---------------------------------------------------------------------------##
+##	Fork(): Try to fork if at all possible.  Function will croak
+##	if unable to fork.
+##
+sub Fork {
+	use POSIX;
+	use Carp;
+
+	my($pid);
+FORK: {
+		  if (defined($pid = fork)) {
+			  return $pid;
+		  } elsif ($! =~ /No more process/) {
+			  sleep 5;
+			  redo FORK;
+		  } else {
+			  croak "Can't fork: $!";
+		  }
+	  }
+}
+
+
+##---------------------------------------------------------------------------##
+##	Init(): Become a daemon.
+##
+sub daemon_init {
+	my $oldmode = shift || 0;
+	my($pid, $sess_id, $i);
+
+## Fork and exit parent
+	if ($pid = Fork) { exit 0; }
+
+## Detach ourselves from the terminal
+	croak "Cannot detach from controlling terminal" unless $sess_id = POSIX::setsid();
+
+## Prevent possibility of acquiring a controling terminal
+	if (!$oldmode) {
+		$SIG{'HUP'} = 'IGNORE';
+		if ($pid = Fork) { exit 0; }
+	}
+
+## Change working directory
+#	chdir "/";
+
+## Clear file creation mask
+#	umask 0;
+
+## Close open file descriptors
+#	foreach $i (0 .. OpenMax) { POSIX::close($i); }
+
+## Reopen stderr, stdout, stdin to /dev/null
+	open(STDIN,  "+>/dev/null");
+#    open(STDOUT, "+>&STDIN");
+#    open(STDERR, "+>&STDIN");
+
+	$oldmode ? $sess_id : 0;
+}
+
+
+# benchmark function
+# usage :
+#      $bench = &start_bench;
+#      $bench = &stop_bench($bench);
+#      print $bench->{start_time};
+#      print $bench->{end_time};
+#      print $bench->{total_time};
+
+# Start benchmark
+sub start_bench {
+	use Time::HiRes qw( gettimeofday );
+
+	my $bench;
+	my @now = gettimeofday;
+
+	$bench->{start_t} = $now[0] + $now[1] / 1000000;
+	$bench->{total_secs} = 0;
+
+	return $bench;
+}
+
+# Accumulate benchmark
+sub stop_bench {
+	use Time::HiRes qw( gettimeofday );
+
+	my $bench = shift;
+	my @now = gettimeofday;
+
+	$bench->{end_t} = $now[0] + $now[1] / 1000000;
+	$bench->{total_secs} = $bench->{end_t} - $bench->{start_t};
+	$bench->{start_time} = &strtime( "%Y/%m/%d %H:%M:%S", $bench->{start_t} );
+	$bench->{end_time} = &strtime( "%Y/%m/%d %H:%M:%S", $bench->{end_t} );
+	$bench->{start_time} .= sprintf ".%03d", ($bench->{start_t} - int($bench->{start_t}))*1000;
+	$bench->{end_time} .= sprintf ".%03d", ($bench->{end_t} - int($bench->{end_t}))*1000;
+
+	return $bench;
+}
+
+sub strtime {
+	use POSIX qw(strftime);
+
+	my ($format,$time) = @_;
+	$time = time if not defined $time;
+
+	my @t = localtime( $time );
+
+	return strftime( $format, $t[0], $t[1], $t[2], $t[3], $t[4], $t[5], $t[6], $t[7], $t[8] );
+}
+

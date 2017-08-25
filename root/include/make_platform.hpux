@@ -1,0 +1,28 @@
+#HP-UX aCC Compiler
+CC	    = cc
+CXX     = /opt/aCC/bin/aCC
+AR      = ar
+AR_FLAG = -r
+AR2     = ranlib
+SO_FLAG += -b
+ARCH64  = +DD64
+ARCH32	= +DD32
+ifndef ARCH
+ARCH    = 64
+endif
+
+#CFLAGS  += $(ARCH) -D__ARCH64 -mt -lc -D__HPUX +W 749,829,849
+
+ifneq ($(CXXSTD),Y)
+CXXFLAGS += -AP
+endif
+CFLAGS  += $(ARCH$(ARCH)) -D__ARCH$(ARCH) +p +W829 +W2815 +W921 -D_REENTRANT -D__HPUX -D__BIG_ENDIAN -mt -g
+
+# -lc Option 은 malloc/free 의 성능에 영향을 미침
+# 반듯이 모든 Library Link 옵션 보다 먼저 정의 되어야 함.
+#LDFLAGS += -lc
+#	-AP -mt +p +W 829 -O2 -D_REENTRANT -D__HPUX -D__BIG_ENDIAN 
+#CXXFLAGS+= -AP -I/opt/aCC/include -I/opt/aCC/include/rw
+LEX     = lex
+YACC    = yacc
+#-I/opt/aCC/include_std

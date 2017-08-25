@@ -1,0 +1,59 @@
+#!/bin/ksh
+LOGFILE=${SCM_MHOME}/log/scm_serve/serve.log
+
+case $1 in
+	start)
+		if [ ! -d `dirname $LOGFILE` ]
+		then
+			mkdir -p `dirname $LOGFILE`
+		fi
+		svnserve -d --listen-port ${SCM_SERVER_PORT} -r ${SCM_SERVER_REPO_PATH} --log-file ${LOGFILE}
+		echo svnserve started
+		;;
+	stop)
+		USER=`id -un`
+		PID=`ps -f -u $SCM_MUSER | grep svnserve | grep -v grep | awk '{ print $2; }'`
+
+		echo Kill process $PID
+		kill -9 $PID
+		;;
+	restart)
+		USER=`id -un`
+		PID=`ps -f -u $SCM_MUSER | grep svnserve | grep -v grep | awk '{ print $2; }'`
+
+		echo Kill process $PID
+		kill -9 $PID
+		svnserve -d --listen-port ${SCM_SERVER_PORT} -r ${SCM_SERVER_REPO_PATH} --log-file ${LOGFILE}
+		echo svnserve started
+		;;
+	*)
+		ps -f -u $SCM_MUSER | grep svnserve | grep -v grep
+		;;
+esac
+
+case $1 in
+	start)
+		scmpwserve -d -p $SCM_PWSERVER_PORT -r $SCM_SERVER_REPO_PATH
+		echo scmpwserve started
+		;;
+	stop)
+		USER=`id -un`
+		PID=`ps -f -u $SCM_MUSER | grep scmpwserve | grep -v grep | awk '{ print $2; }'`
+
+		echo Kill process $PID
+		kill -9 $PID
+		;;
+	restart)
+		USER=`id -un`
+		PID=`ps -f -u $SCM_MUSER | grep scmpwserve | grep -v grep | awk '{ print $2; }'`
+
+		echo Kill process $PID
+		kill -9 $PID
+		scmpwserve -d -p $SCM_PWSERVER_PORT -r $SCM_SERVER_REPO_PATH
+		echo svnserve started
+		;;
+	*)
+		ps -f -u $SCM_MUSER | grep scmpwserve | grep -v grep
+		;;
+esac
+

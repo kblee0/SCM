@@ -1,0 +1,63 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+my $bin;
+my @objs = ();
+my @userlibs = ();
+my @syslibs = ();
+my @cflags = ();
+
+$bin = shift @ARGV;
+
+my @bins = split /\s+/, $bin;
+my $i;
+
+foreach my $arg (@ARGV) {
+	if( $arg =~ /\.o$/ ) {
+		push @objs, $arg;
+	}
+	elsif( $arg =~ /^-l(.+)$/ ) {
+		if( -f "/usr/lib/lib$1.so" or -f "/usr/lib/lib$1.a" ) {
+			push @syslibs, $arg;
+		}
+		else {
+			push @userlibs, $arg;
+		}
+	}
+	else {
+		push @cflags, $arg;
+	}
+}
+
+for( $i = 0; $i <= $#bins; $i++ ) {
+	if( $objs[$i] eq '' ) {
+		$objs[$i] = $bins[$i] . '.o';
+	}
+}
+
+print "BINS = @bins\n\n";
+
+for( $i = 0; $i <= $#bins; $i++ ) {
+	print "$bins[$i]\_MAIN_OBJ = $objs[$i]\n";
+}
+
+print "\n";
+
+if( @userlibs ) {
+	print "USER_LIBS += @userlibs\n\n";
+}
+
+if( @syslibs ) {
+	print "LDLIBS += @syslibs\n\n";
+}
+
+if( @cflags ) {
+	print "CFLAGS += @cflags\n\n";
+}
+
+for( $i = 0; $i <= $#bins; $i++ ) {
+	print "$bins[$i] : $objs[$i]\n";
+	print "\t\$(CCL)\n\n";
+}
+

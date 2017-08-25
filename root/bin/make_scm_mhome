@@ -1,0 +1,17 @@
+#!/bin/ksh
+cd ${SCM_MHOME}
+mkdir -p ${SCM_MHOME}/pkg
+mkdir -p ${SCM_MHOME}/deploy.conf
+mkdir -p ${SCM_MHOME}/deploy
+
+echo -n "Enter Repository Name:"
+read REPO_NAME
+
+if [ x$REPO_NAME != x ]
+then
+mkdir -p ${SCM_MHOME}/repos
+cd ${SCM_MHOME}/repos
+svnadmin create $REPO_NAME
+svn mkdir file://${SCM_MHOME}/repos/${REPO_NAME}/pkg -m "make_scm_mhome"
+fi
+

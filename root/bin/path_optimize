@@ -1,0 +1,33 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+my $orig = shift @ARGV;
+my $sep  = shift @ARGV;
+
+$sep = ':' if not defined $sep;
+
+my @path_list = split /$sep/, $orig;
+
+my @out = ();
+
+foreach my $path ( @path_list ) {
+	my $is_found = 0;
+
+	next if $path eq '';
+
+	foreach my $out_path (@out) {
+		if( $path eq $out_path ) {
+			$is_found = 1;
+		}
+	}
+	if( not $is_found ) {
+		push @out, $path;
+	}
+}
+
+print join( $sep, @out ) . "\n";
+
+exit 0;

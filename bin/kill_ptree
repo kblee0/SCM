@@ -1,0 +1,51 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Process;
+
+my $ps = new SCM::Process;
+
+my $pid;
+my $signum = 9;
+my $noprint = 0;
+
+if( $ARGV[0] eq "-q" ) {
+	$noprint = 1;
+	shift @ARGV;
+}
+
+if( $ARGV[0] =~ /^-([0-9]+)$/ ) {
+	$signum = int( $1 );
+	shift @ARGV;
+}
+
+$ps->ps;
+
+my $psinfo = ();
+
+if( $ARGV[0] =~ /^[0-9]+$/ ) {
+	$psinfo = $ps->get_psinfo( $ARGV[0] );
+}
+else {
+	$psinfo = $ps->get_psinfobyname( @ARGV );
+}
+
+die "cannot find process @ARGV.\n" if not $psinfo;
+
+my @tree = $ps->get_tree_proc( $psinfo->{pid} );
+
+if( $noprint != 1 ) {
+	$ps->print_head;
+}
+
+foreach $psinfo (@tree) {
+	kill( $signum, $psinfo->{pid} );
+	if( $noprint != 1 ) {
+		$ps->print($psinfo);
+	}
+}
+
+exit 0;

@@ -1,0 +1,14 @@
+#!/bin/ksh
+
+. /users/ktf/cscm/root/etc/profile > /dev/null 2>&1
+
+export PATH=${HOME}/bin:${PATH}
+
+kill_ptree -q -0 job_sched
+
+if [ $? -eq 0 ]
+then
+   exit 1
+fi
+
+${SCM_MHOME}/bin/job_sched -d -c ${SCM_MHOME}/bin/job.conf -l ${SCM_MHOME}/log/job_sched.log

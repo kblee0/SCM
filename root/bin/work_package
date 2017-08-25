@@ -1,0 +1,47 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::Package;
+use SCM::UTIL;
+use File::Path;
+
+my $deploy = $ARGV[0];
+my $pkg = $ARGV[1];
+my $scm = new SCM;
+
+debug_mode( 0 );
+$scm->deploy( $deploy );
+my $ver = $scm->version( $pkg );
+
+if( $ver eq '' ) {
+	print STDERR "$pkg does not exist.\n";
+	exit 1;
+}
+
+debug_print( "work_package create : " . $scm->package( $pkg ) );
+@svn = ( "co", "-q", "--depth=empty", $scm->repos . "/pkg/$pkg/$ver", $scm->package( $pkg ) );
+mkpath $scm->package( $pkg ), 0, 0755;
+$scm->svn( @svn );
+
+my $cmd = $scm->svn_command( 'ls', '-R', $scm->repos . "/pkg/$pkg/$ver" );
+
+my @svnls = `$cmd`;
+my @modules = sort( grep( /\/$/, @svnls ) );
+
+debug_print( "@modules" );
+@svn = ( "up", "-q", "--depth=empty" );
+foreach my $dir ( @modules ) {
+	chomp $dir;
+	my $path = $scm->home . "/pkg/$pkg/$ver/$dir";
+	push @svn, $path;
+}
+
+$scm->svn( @svn );
+
+print "\n$deploy/$pkg/$ver is created\n\n";
+
+exit 0;

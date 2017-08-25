@@ -1,0 +1,7 @@
+#!/bin/ksh
+for p in `find ${SCM_HOME}/pkg -type d -name 'v[0-9][0-9][0-9]'`
+do
+	echo "Upgrade $p"
+	svn upgrade $p > /dev/null 2>&1
+done
+rmdir ${SCM_HOME}/.scm_update_1.2.2

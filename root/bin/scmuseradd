@@ -1,0 +1,136 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+use warnings;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+
+use SCM::User;
+
+# Global values
+our ($host, $port);
+our ($user,$passwd,$repo);
+our ($cli);
+
+init();
+
+scm_add_user( $user, $passwd, $repo );
+
+sub usage {
+	die "Usage: scmuseradd -r <repo-base path> <login id> [passwd]\n";
+}
+
+sub init {
+	use Getopt::Std;
+	my $opt_string = 'r:';
+	my %opt;
+
+	getopts( "$opt_string", \%opt ) or usage();
+	usage() unless( ($#ARGV == 0 or  $#ARGV == 1) and defined $opt{r} );
+
+	($host, $port) = ($ENV{SCM_SERVER_HOST},$ENV{SCM_PWSERVER_PORT});
+
+	($user,$passwd) = @ARGV;
+
+	$repo = $opt{r};
+
+	my $baseurl = sprintf "http://%s:%d", $ENV{SCM_SERVER_HOST}, $ENV{SCM_PWSERVER_PORT};
+
+	$cli = SCM::User->new( $baseurl, 5 );
+}
+
+sub scm_add_user {
+	my ($user, $passwd, $repo) = @_;
+	
+	$repo = defined $repo ? ($repo) : '';
+
+	my $rc = $cli->find_user( $repo, $user );
+
+	# user exist
+	if( $rc == 0 ) {
+		die "Login '$user' not unique\n";
+	}
+	# user not exist = 1
+	elsif( $rc != 1 ) {
+		die "cannot add user\n";
+	}
+	if( not defined($passwd) ) {
+		for( my $i = 0; $i < 3; $i++ ) {
+			$passwd = get_passwd_text("New password: ");
+			if( $passwd ne get_passwd_text("Re-enter new password: ") ) {
+				if( $i < 2 ) {
+					print "They don't match; try again.\n";
+				}
+				else {
+					die "Too many failures - try later.\n";
+				}
+			}
+			else {
+				last;
+			}
+		}
+	}
+
+	$rc = $cli->add_user( $repo, $user, $passwd );
+	if( $rc == 0 ) {
+		print "User successfully added\n";
+	}
+	else {
+		die "cannot add user\n";
+	}
+}
+
+sub get_passwd_text {
+	my ($prompt) = @_;
+
+	print $prompt;
+	#ReadMode ('noecho');
+	system("stty", "-echo");
+	chomp( my $value = <STDIN> );
+	#ReadMode ('restore');
+	system("stty", "echo");
+	print "\n";
+
+	return $value;
+}
+
+sub cli_command {
+	my ($command) = @_;
+
+	my $handle = IO::Socket::INET->new(
+			Proto     => "tcp",
+			PeerAddr  => $host,
+			PeerPort  => $port,
+			Timeout => 10)
+	or die "can't connect to port $port on $host: $!\n";
+
+	$handle->autoflush(1);              # so output gets there right away
+
+#print STDERR "[Connected to $host:$port]\n";
+
+	my $result = <$handle>;
+	if( not defined $result or not $result =~ /^100 / ) {
+		die "can't receive welcome message\n";
+	}
+	print $handle $command . "\n";
+
+	$result = <$handle>;
+	if( not defined $result ) {
+		die "can't receive result\n";
+	}
+
+#print "SND: $command\n";
+#print "RCV: $result\n";
+
+	print $handle "QUIT\n";
+
+	close( $handle );
+	
+	if( $result =~ /^(\d{3})\s+/ ) {
+		return $1;
+	}
+	return 500;
+}
+

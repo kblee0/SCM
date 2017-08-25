@@ -1,0 +1,118 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Process;
+
+#
+# Globals
+#
+use vars qw/ %opt /;
+
+#
+# Command line options processing
+#
+sub init()
+{
+    use Getopt::Std;
+    my $opt_string = 'tpsh';
+    getopts( "$opt_string", \%opt ) or usage();
+    usage() if $opt{h} or $#ARGV < 0;;
+}
+
+#
+# Message about this program and how to use it
+#
+sub usage()
+{
+    print STDERR << "EOF";
+
+This program does...
+
+usage: pskill [-n] <command>
+
+ -t          : kill process with child process.
+ -s <signal> : signal number (default = SIGKILL(9)
+ -p          : print ps result
+
+
+EOF
+    exit;
+}
+
+&init();
+
+my $signum = &signum( $opt{s} );
+
+&pskill( $signum, @ARGV );
+
+sub pskill {
+	my ( $signum, @argv ) = @_;
+
+	my $ps = new SCM::Process;
+
+	my $pid;
+
+	$ps->ps;
+
+	my $psinfo = ();
+
+	if( $argv[0] =~ /^[0-9]+$/ ) {
+		$psinfo = $ps->get_psinfo( $argv[0] );
+	}
+	else {
+		$psinfo = $ps->get_psinfobyname( @argv );
+	}
+
+	die "cannot find process @argv.\n" if not $psinfo;
+
+	my @pslist = ();
+
+	if( $opt{t} ) {
+		@pslist = $ps->get_tree_proc( $psinfo->{pid} );
+	}
+	else {
+		@pslist = ( $psinfo );
+	}
+
+	$ps->print_head;
+
+	foreach $psinfo (@pslist) {
+		kill( $signum, $psinfo->{pid} );
+		$ps->print($psinfo);
+	}
+}
+
+sub signum {
+	my $signum = shift;
+	my %signals = (
+			'SIGINT'  =>  2,      # Interrupt
+			'SIGQUIT' =>  3,      # quit
+			'SIGILL'  =>  4,      # Illegal instruction (not reset when caught)
+			'SIGTRAP' =>  5,      # trace trap (not reset when caught)
+			'SIGABRT' =>  6,      # Process abort signal
+			'SIGFPE'  =>  8,      # Floating point exception
+			'SIGKILL' =>  9,      # kill (cannot be caught of ignored)
+			'SIGBUS'  => 10,      # bus error
+			'SIGSEGV' => 11,      # Segmentation violation
+			'SIGSYS'  => 12,      # bad argument to system call
+			'SIGPIPE' => 13,      # write on a pipe with no one to read it
+			'SIGALRM' => 14,      # alarm clock
+			'SIGTERM' => 15,      # Software termination signal from kill
+			'SIGUSR1' => 16,      # user defined signal 1
+			'SIGUSR2' => 17,      # user defined signal 2
+			'SIGCHLD' => 18,      # Child process terminated or stopped
+			'SIGCLD'  => 18,      # death of a child
+			'SIGSTOP' => 24,      # Stop signal (cannot be caught or ignored)
+			'SIGTSTP' => 25,      # Interactive stop signal
+			'SIGCONT' => 26,      # Continue if stopped
+			);
+
+	if( defined $signals{$signum} ) {
+		return $signals{$signum};
+	}
+	return $signum;
+}
+

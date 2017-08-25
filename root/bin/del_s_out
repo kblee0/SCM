@@ -1,0 +1,32 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+
+foreach my $f (@ARGV) {
+	&del_s_out( $f );
+}
+
+sub del_s_out {
+	my ($f) = @_;
+	my @delf = ();
+
+	if( not -f $f ) {
+		return;
+	}
+	if( $f =~ /^(.*)\.pc$/ ) {
+		push @delf, "$1.lis" if -f "$1.lis";
+		push @delf, "$1.cpp" if -f "$1.cpp";
+		push @delf, "$1.c" if -f "$1.c";
+		push @delf, "$1.o"   if -f "$1.o";
+	}
+	elsif( $f =~ /^(.*)\.sc$/ ) {
+		push @delf, "$1.cpp" if -f "$1.cpp";
+		push @delf, "$1.c" if -f "$1.c";
+		push @delf, "$1.o"   if -f "$1.o";
+	}
+	if( $#delf >= 0 ) {
+		print "Delete files for $f : @delf\n";
+		unlink @delf;
+	}
+}

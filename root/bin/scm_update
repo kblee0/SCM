@@ -1,0 +1,88 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM;
+use SCM::UTIL;
+
+my $scm = new SCM;
+
+&scm_update();
+
+exit 0;
+
+sub scm_update {
+	my $ver = &scm_local_version();
+	my $deploy = &scm_local_deploy();
+
+	debug_print( "scm_update: current version = $ver, deploy = $deploy, target=" . $scm->scm_version() );
+
+	my $update_mark = sprintf "%s/.scm_update_%s", $scm->home, $scm->scm_version();
+	debug_print( "Update marker : $update_mark" );
+
+	if( -d $update_mark ) {
+		$ver = '';
+	}
+
+	if( $ver ne $scm->scm_version() ) {
+		debug_print( "scm_updating... $ver ==> " . $scm->scm_version );
+		if( not -d $update_mark ) {
+			mkdir $update_mark, 0755;
+		}
+		my $update_shell = sprintf "%s/update/scm_update_%s", $scm->root, $scm->scm_version;
+		debug_print( "check update shell: $update_shell" );
+		if( -x $update_shell ) {
+			debug_print( "running update shell: $update_shell" );
+			system( "ksh", "-c", $update_shell, $deploy, $ver );
+		}
+		else {
+			rmdir $update_mark;
+		}
+		$scm->set_deploy_profile( $deploy ) if $deploy ne '';
+	}
+}
+
+sub scm_local_version {
+	my $profile = sprintf "%s/deploy/.profile", $scm->home;
+
+	if( not -r $profile ) {
+		return $scm->scm_version;
+	}
+	open FD, $profile;
+	
+	my $ver = '';
+	while( my $line = <FD> ) {
+		chomp $line;
+		debug_print( "DDDD $line" );
+		if( $line =~ /SCM_VERSION\s*=\s*(\S+)\s*$/ ) {
+			debug_print( "FIND SCM_VERSION $1" );
+			$ver = $1;
+			last;
+		}
+	}
+	close FD;
+	return $ver;
+}
+
+sub scm_local_deploy {
+	my $deploy = '';
+	my $profile = sprintf "%s/deploy/.profile", $scm->home;
+
+	if( not -r $profile ) {
+		return $deploy;
+	}
+	open FD, $profile;
+	
+	while( my $line = <FD> ) {
+		chomp $line;
+		if( $line =~ /SCM_DEPLOY\s*=\s*(\S+)\s*$/ ) {
+			debug_print( "DDD $1" );
+			$deploy = $1;
+			last;
+		}
+	}
+	close FD;
+	return $deploy;
+}
+

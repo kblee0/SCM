@@ -1,0 +1,43 @@
+#!/bin/ksh
+
+deploy=$1
+
+if [ x"${deploy}" = x ]
+then
+	echo "Usage :"
+	echo "       create_deploy <deploy>"
+	echo
+	exit 1
+fi
+
+if [ ! -f "${SCM_MHOME}/deploy.conf/${deploy}.d/deploy.cfg" ]
+then
+	echo ${SCM_MHOME}/deploy.conf/${deploy}.d/deploy.cfg does not exist.
+	exit 1
+fi
+
+if [ -d ${SCM_BHOME}/deploy/${deploy}.a -o -d ${SCM_BHOME}/deploy/${deploy}.b ]
+then
+	echo deploy directories exist.
+	exit 1
+fi
+
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.a/bin
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.a/lib
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.a/out
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.a/cfg
+
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.b/bin
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.b/lib
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.b/out
+mkdir -p ${SCM_BHOME}/deploy/${deploy}.b/cfg
+
+ln -s ${SCM_BHOME}/deploy/${deploy}.a ${SCM_MHOME}/deploy/${deploy}
+ln -s ${SCM_BHOME}/deploy/${deploy}.b ${SCM_BHOME}/deploy/${deploy}
+
+echo
+echo ${deploy} created.
+echo
+
+exit 0
+

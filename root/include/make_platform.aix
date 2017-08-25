@@ -1,0 +1,7 @@
+#IBM-AIX Visual Age C++ Compiler
+CC = xlC_r
+AR = ar
+AR_FLAG = -r -X64
+AR2 = ranlib
+ARCH64 = -q64 
+ARCH32 = -q32 

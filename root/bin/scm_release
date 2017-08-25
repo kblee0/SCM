@@ -1,0 +1,114 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Version;
+use SCM::UTIL;
+use File::Path;
+
+debug_mode( 0 );
+
+my @path_sub_dirs = ( "patch/CONT/MF", "patch/CONT/CO", "patch/CONT/MD", "patch/CONT/RT", "patch/CONT/DT", "patch/CONT/IF", "patch/CONT/GAIA", "patch/CONT/GAIAADMIN", "patch/CONT/PFM", "patch/PCKT/MF", "patch/PCKT/CO", "patch/PCKT/MD", "patch/PCKT/RT", "patch/PCKT/DT", "patch/PCKT/IF", "patch/PCKT/PFM");
+
+my $scm = new SCM::Version;
+
+my $deploy = shift @ARGV;
+
+if( not defined $deploy ) {
+	die "\nUsage : scm_release <deployment>\n\n";
+}
+
+$scm->deploy( $deploy );
+
+if( not $scm->set_current_version ) {
+	die "\n$deploy does not releasable\n\n";
+}
+
+if( -d $scm->release_dir ) {
+	die $scm->release_dir . " already exist.\n";
+}
+
+if( not -d $scm->bin(1) ) {
+	die $scm->bin(1) . " does not exist.\n";
+}
+
+if( not -d $scm->cfg ) {
+	die $scm->cfg(1) . " does not exist.\n";
+}
+
+printf "create release directory %s\n", $scm->release_dir;
+mkpath $scm->release_dir, 0, 0755 || die "cannot create " . $scm->release_dir . " $!\n";
+
+printf "copy %s --> %s\n", $scm->bin(1), $scm->release_dir;
+if( system( "cp",  "-r", $scm->bin(1), $scm->release_dir ) ) {
+	rmtree $scm->release_dir;
+	die "cannot copy " . $scm->bin(1);
+}
+
+printf "copy %s --> %s\n", $scm->cfg(1), $scm->release_dir;
+if( system( "cp",  "-r", $scm->cfg(1), $scm->release_dir ) ) {
+	rmtree $scm->release_dir;
+	die "cannot copy " . $scm->cfg(1);
+}
+
+printf "create relase info. [%s]\n", $scm->release_info;
+if( not &create_release_info( $scm->release_info ) ) {
+	rmtree $scm->release_dir;
+	unlink $scm->release_info;
+	die "cannot create release info\n";
+}
+
+my $old_umask = umask( 0000 );
+foreach my $sub_dir (@path_sub_dirs) {
+	my $dir = sprintf "%s/%s", $scm->release_dir, $sub_dir;
+	mkpath $dir, 0, 0777;
+}
+
+umask( $old_umask );
+
+exit 0;
+
+sub create_release_info {
+	my ($file) = @_;
+
+	my $date = `date`;
+	chomp $date;
+	my $cmd = sprintf "ls -l %s/bin", $scm->release_dir;
+	my $bin_list = `$cmd`;
+	$cmd = sprintf "ls -l %s/cfg", $scm->release_dir;
+	my $cfg_list = `$cmd`;
+	my $deploy = $scm->deploy;
+
+	my $package_list = undef;
+	foreach my $package ($scm->packages) {
+		$package_list .= sprintf " %s(%s)", $package, $scm->version( $package );
+	}
+	$cmd = $scm->svn_command( 'info', $scm->repos );
+
+	my $svninfo = `$cmd`;
+
+	open FD, ">", $file || return 0;
+
+	print FD <<EOF;
+Release date : $date
+
+Deployment : $deploy
+Packages   :$package_list
+
+$svninfo
+
+BINs :
+$bin_list
+
+CFGs :
+$cfg_list
+
+EOF
+	close FD;
+
+	return 1;
+}
+

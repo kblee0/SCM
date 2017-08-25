@@ -1,0 +1,286 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/bin";
+use SCM;
+use SCM::UTIL;
+use File::Path;
+
+my $scm = new SCM;
+
+my $target_version = $scm->scm_version;
+my $update_mark = sprintf "%s/.scm_update_%s", $scm->home, $target_version;
+
+my @work_package = get_dirs( $scm->pkg, "d" );
+
+debug_print( "work_package: @work_package" );
+
+my @crab020_pkg;
+my @crab021_pkg;
+my @crab022_pkg;
+my @crab023_pkg;
+my $report;
+
+foreach my $pkg (@work_package) {
+	if( -d ($scm->pkg . "/$pkg/v020") ) {
+		push @crab020_pkg, $pkg;
+	}
+	if( -d ($scm->pkg . "/$pkg/v021") ) {
+		push @crab021_pkg, $pkg;
+	}
+	if( -d ($scm->pkg . "/$pkg/v022") ) {
+	    push @crab022_pkg, $pkg;
+	}
+	if( -d ($scm->pkg . "/$pkg/v022") ) {
+	    push @crab023_pkg, $pkg;
+	}
+}
+
+print "crab020 package: @crab020_pkg\n";
+print "crab021 package: @crab021_pkg\n";
+print "crab022 package: @crab022_pkg\n";
+print "crab023 package: @crab023_pkg\n";
+
+my $updir = $scm->home . '/upgrade';
+my $rc = mkpath( $updir, 0, 0755 );
+my $pkg_bak = $scm->pkg . "_bak";
+if( -d $pkg_bak ) {
+	for( my $i = 0; ; $i++ ) {
+		my $tmp = sprintf "%s%03d", $pkg_bak, $i;
+		if( not -e $tmp ) {
+			$pkg_bak = $tmp;
+			last;
+		}
+	}
+}
+my $rc = mkpath( $pkg_bak, 0, 0755 );
+
+printf "mkdir($rc): $pkg_bak\n", $scm->home;
+
+my $rc1 = &upgrade( "crab020", @crab020_pkg );
+my $rc1 = &upgrade( "crab021", @crab021_pkg );
+my $rc1 = &upgrade( "crab022", @crab022_pkg );
+my $rc2 = &upgrade( "crab023", @crab023_pkg );
+
+if( $rc1 == 1 and $rc2 == 1 ) {
+	rmdir $update_mark;
+	print $report;
+	print "+==============================================================+\n";
+	print "|                    Update가 완료 되었습니다.                 |\n";
+	print "+==============================================================+\n";
+}
+else {
+	print << "EOF";
++==============================================================+
+| Upgrade 가 실패하였습니다. 관리자에게 문의 하십시오          |
++==============================================================+
+EOF
+}
+
+
+exit 0;
+
+sub upgrade {
+	my ($deploy, @packages) = @_;
+	my @cmd;
+	my $rc = 1;
+
+	$scm->deploy( $deploy );
+	if( $#packages == -1 ) {
+		return 1;
+	}
+	print  "+=========================================+\n";
+	printf "|         Start upgrade $deploy           |\n";
+	print  "+=========================================+\n\n";
+	print  "-------------------------------------------\n";
+	print  "Step 1: list searching. >>";
+	my $src_list = "$pkg_bak/$deploy\_src.lst";
+	my $mod_list = "$pkg_bak/$deploy\_mod.lst";
+	my $new_list = "$pkg_bak/$deploy\_new.lst";
+	my $tar = "$pkg_bak/$deploy\_backup.tar";
+	my $tar_count = 0;
+	my $old_svn_url = "svn://localhost";
+	my $new_svn_url = "svn://localhost/crab";
+
+	$scm->repos( $old_svn_url );
+	$ENV{'SCM_REPO_URL'} = $old_svn_url;
+	&unlink_file( $src_list, $new_list, $tar );
+	$scm->deploy( $deploy );
+
+	my @co_module = &get_co_modules( $deploy, @packages );
+	print ">>";
+
+# 변경 내역 검사
+	foreach my $module (@co_module) {
+		@cmd = ( "ksh", "-c", "svn st -N $module 2> /dev/null | awk '{ print \$2; }' >> $src_list" );
+		if( system( @cmd ) != 0 ) {
+			die "cannot check modified source\n";
+		}
+		print ">>";
+	}
+	my @tmp = `cat $src_list`;
+	open FD, ">$mod_list";
+	foreach my $t (@tmp) {
+		chomp $t;
+		if( -f $t ) {
+			print FD "$t\n";
+		}
+	}
+	close FD;
+# 신규 소스 검사
+	foreach my $pkg (@packages) {
+		$tar_count += &gen_new_src_list( $deploy, $pkg, $new_list );
+		print ">>";
+	}
+	$tar_count += &get_line_count( $mod_list );
+	print "\n\n";
+
+	print "-------------------------------------------\n";
+	print "Step 2: backup local source...\n";
+	if( $tar_count > 0 ) {
+		@cmd = ( 'ksh', '-c', "tar cvf $tar `cat $mod_list $new_list`" );
+		debug_print( "@cmd" );
+		if( system( @cmd ) != 0 ) {
+			die "cannot source backup\n";
+		}
+	}
+
+	if( not -d $pkg_bak ) {
+		mkdir( $pkg_bak, 0755 ) || die "cannot create " . $scm->pkg . ". $!\n";
+	}
+	
+	foreach my $pkg (@packages) {
+		my $pkg_base = $pkg_bak . "/$pkg";
+		if( not -d $pkg_base ) {
+			mkdir( $pkg_base, 0755 ) || die "cannot create $pkg_base. $!\n";
+		}
+		printf "       move : %s ==> %s\n", $scm->package( $pkg ), $pkg_base;
+		if( system( "mv", $scm->package( $pkg ), $pkg_base ) != 0 ) {
+			die "cannot move " .  $scm->package( $pkg ) . ". $!\n";
+		}
+	}
+	
+	$scm->repos( $new_svn_url );
+	$ENV{'SCM_REPO_URL'} = $new_svn_url;
+
+	print "\n-------------------------------------------\n";
+	print "Step 3: create new working source area...\n";
+	foreach my $pkg (@packages) {
+		@cmd = ( "work_package", $deploy, $pkg );
+		print "@cmd\n";
+		system( @cmd );
+	}
+	foreach my $module (@co_module) {
+		@cmd = ( 'ksh', '-c', "set_deploy.pl $deploy; . $ENV{SCM_HOME}/deploy/.profile ; cd $module ; scm co" );
+		print "@cmd\n";
+		if( system( @cmd ) != 0 ) {
+			die "cannot check out $module\n";
+		}
+	}
+
+	print "\n-------------------------------------------\n";
+	print "Step 4: restore local sources...\n";
+	if( $tar_count > 0 ) {
+		@cmd = ( "ksh", "-c", "cd / ; tar xvf $tar" );
+#		print "@cmd\n";
+		system( @cmd );
+	}
+
+	print "$deploy upgrade complete\n";
+
+	$report .= <<EOF;
+----------------------------------------------------------------
+deploy name       : $deploy
+packages          : @packages
+backup source area: $pkg_bak
+modified sources  : $mod_list
+new sources       : $new_list
+----------------------------------------------------------------
+EOF
+	return 1;
+}
+
+sub gen_new_src_list {
+	my ($deploy, $pkg, $out_file) = @_;
+
+	my $cmd = sprintf "svn ls -R %s/pkg/%s/%s",  $scm->repos, $pkg, $scm->version( $pkg );
+	debug_print( $cmd );
+	my @mst_list = `$cmd`;
+#	my @mst_list = get_dirs( $scm->package( $pkg, 1 ), "fs" );
+	my @loc_list = get_dirs( $scm->package( $pkg, ), "fs" );
+	my $file_count = 0;
+	my %mst_hash = ();
+
+	foreach my $file (@mst_list) {
+		chomp $file;
+		$mst_hash{ $file } = 1;
+	}
+
+	open FD, ">>$out_file" || die "cannot open $out_file. #!\n" if $file_count == 0;
+
+	foreach my $file (@loc_list) {
+		if( not defined $mst_hash{ $file } ) {
+			if( not $file =~ /pcscfg\.cfg$/ ) {
+#open FD, ">>$out_file" || die "cannot open $out_file. #!\n" if $file_count == 0;
+				printf FD "%s/$file\n", $scm->package( $pkg );
+				debug_print( sprintf  "not fond($file_count) add $out_file: %s/$file\n", $scm->package( $pkg, 1 ) );
+				$file_count++;
+			}
+		}
+	}
+	close FD;
+#if $file_count > 0;
+	return $file_count;
+}
+
+sub unlink_file {
+	my (@files) = @_;
+	foreach my $file (@files) {
+		if( -f $file ) {
+			if( not unlink( $file ) ) {
+				die "cannot remove $file. $!\n";
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
+sub get_line_count {
+	my $file = shift;
+	my $lc = 0;
+
+	open LFD, $file || die "cannot open file $file. $!\n";
+
+	while( my $line = <LFD> ) {
+		chomp $line;
+
+		if( $line ne '' ) {
+			$lc++;
+		}
+	}
+	close LFD;
+	return $lc;
+}
+
+sub get_co_modules {
+	my ($deploy, @packages) = @_;
+	my @co_modules = ();
+
+	foreach my $pkg (@packages) {
+		foreach my $module ( $scm->get_local_sub_modules( $pkg, '' ) ) {
+			my @files = get_dirs( $scm->module( $pkg, $module ), 'f' );
+			if( $#files >= 0 and -d ($scm->module( $pkg, $module ) . '/.svn') ) {
+				push @co_modules, $scm->module( $pkg, $module );
+				debug_print( "CO Module " . $scm->module( $pkg, $module ) );
+			}
+			else {
+			}
+		}
+	}
+	return @co_modules;
+}
+

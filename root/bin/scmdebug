@@ -1,0 +1,17 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+
+use SCM::UTIL;
+
+my $file = shift;
+
+debug_mode( 1 );
+debug_mode_changable( 0 );
+
+require "$file";
+
+1;

@@ -1,0 +1,40 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+my %objs;
+my %dobjs;
+my @dupobjs;
+
+foreach my $lib (@ARGV) {
+	open FD, "nm -Al $lib |";
+	while( my $line = <FD> ) {
+		chomp $line;
+		if( $line =~ /^(.+)\[(.+)\]:([^\|]*)\|([^\|]*)\|\s*([^\|\s]*)\s*\|\s*([^\|\s]*)\s*\|\s*([^\|\s]*)\s*\|[^\|]*\|([^\|]*)\|([^\|]*)$/ ) {
+			my @nm = ($lname, $obj, $size, $type, $bind, $name) = ($1, $2, $5, $6, $7, $9 );
+			if( $size > 0 and $bind ne 'LOCL') {
+				if( defined $objs{$name} ) {
+					push @dupobjs, \@nm;
+					$dobjs{$name} = 1;
+				}
+				else {
+					$objs{$name} = \@nm;
+				}
+			}
+		}
+	}
+	close FD;
+}
+
+foreach my $name (keys %dobjs) {
+	print "$name\n";
+	my @nm = @{$objs{$name}};
+	printf "   %s %s %s %s\n", $nm[0], $nm[1], $nm[3], $nm[5];
+	foreach my $ref (@dupobjs) {
+		@nm = @{$ref};
+		if( $nm[5] eq $name ) {
+			printf "   %s %s %s %s\n", $nm[0], $nm[1], $nm[3], $nm[5];
+		}
+	}
+}
+

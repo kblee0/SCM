@@ -1,0 +1,252 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Version;
+use SCM::UTIL;
+#
+# Globals
+#
+use vars qw/ %opt /;
+
+debug_mode( 0 );
+
+my $deploy;
+my $scm;
+my $version;
+my $target;
+my $part;
+my $order;
+
+&main();
+
+#
+# Command line options processing
+#
+sub init()
+{
+    use Getopt::Std;
+
+	$scm = new SCM::Version;
+
+	if( $#ARGV == 0 ) {
+		$deploy = shift @ARGV;
+	}
+	else {
+		$deploy = $scm->deploy;
+	}
+}
+
+#
+# Message about this program and how to use it
+#
+sub usage()
+{
+    exit 0;
+}
+
+sub main {
+	&init();
+
+	system("clear");
+
+	print "\n";
+	print "==================================================\n";
+    print "                 CSCM Patch Request\n";
+	print "==================================================\n";
+	print "\n";
+	
+	print " 현재 사용 서버 : ";
+	system("uname -n");
+
+	&get_deploy();
+	&get_part();
+	&get_order();
+	my $list = &get_list();
+
+	&create_patch( $list );
+
+	exit 0;
+}
+
+sub create_patch {
+	my $list = shift;
+	my %patchs = %{$list};
+
+	print "\n";
+	print "==================================================\n";
+	print " 패치 요청 목록:\n";
+	print "==================================================\n";
+	foreach my $sys (keys %patchs) {
+		print "  $sys :\n";
+		foreach my $file ( @{$patchs{$sys}} ) {
+			print "        $file\n";
+		}
+		print "\n";
+	}
+	while( 1 ) {
+		print "위사항인 맞습니까? [y/n] : ";
+		my $line = <STDIN>;
+		chomp $line;
+		next if not $line =~ /^[yn]$/;
+		if( $line eq 'y' ) {
+			if( &copy_patch_files( $list ) ) {
+				print "\n패치등록 완료 되었습니다.\n\n";
+			}
+			else {
+				print "\n패치등록이 실패 하였습니다. 관리자에게 문의 바랍니다.\n\n";
+			}
+		}
+		last;
+	}
+}
+
+sub copy_patch_files {
+	my $list = shift;
+	my %patchs = %{$list};
+
+	print "\ncreate patch :\n";
+	foreach my $sys (keys %patchs) {
+		foreach my $file ( @{$patchs{$sys}} ) {
+			my $src = $file;
+			$src = $scm->bin(1) . "/$file" if not $file =~ /^\//;
+			my $dest = $scm->home(1) . "/release/v$version/patch/$part/$sys/$order/";
+
+			my $base;
+			if( $src =~ /\/([^\/]+)$/ ) {
+				$base = $1;
+			}
+			else {
+				$base = $src;
+			}
+			print "    $src ==> $dest$base\n";
+			if( -f "$dest$base" ) {
+				unlink( "$dest$base" );
+			}
+			if( -d $dest ) {
+
+			}
+			else {
+				my @cmd2 = ( "mkdir", $dest );
+				if( system( @cmd2 ) ne 0 ) {
+					return 0;
+				}
+			}
+			
+			my @cmd = ( "cp", $src, $dest );
+
+			debug_print( "@cmd" );
+			if( system( @cmd ) ne 0 ) {
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
+sub get_deploy {
+	while( 1 ) {
+		if( $scm->deploy( $deploy ) ) {
+			print " Deploy명 : [Default:$deploy] ";
+		}
+		else {
+			print " Deploy명 : ";
+		}
+		my $line = <STDIN>;
+		chomp $line;
+		$deploy = $line if $line ne '';
+		if( $scm->deploy( $deploy ) ) {
+			if( not $scm->set_release_version() ) {
+				print "$deploy 는 release되지 않았습니다. 다시 입력하세요.\n";
+			}
+			else {
+				$version = $scm->version_name();
+				print "\n 대상 버전: v$version\n";
+				last;
+			}
+		}
+		else {
+			print "$deploy 가 존재하지 않습니다. 다시 입력하세요.\n";
+			$deploy = '';
+		}
+	}
+}
+
+sub get_part {
+	my @part_list = ( '', 'CONT', 'PCKT' );
+	while(1) {
+		print "\n 적용 파트(1:CONT, 2:PCKT) : ";
+		my $line = <STDIN>;
+		chomp $line;
+		next if not $line =~ /^[1-2]$/;
+		$part = $part_list[$line];
+		last;
+	}
+}
+
+sub get_order {
+	my @order_list = ( '', 'Order_1', 'Order_2', 'Order_3' );
+	while(1) {
+		print "\n 적용 파트(1:1차, 2:2차, 3:3차) : ";
+		my $line = <STDIN>;
+		chomp $line;
+		next if not $line =~ /^[1-3]$/;
+		$order = $order_list[$line];
+		last;
+	}
+}
+
+sub get_list {
+	my @system_list = ( '', 'CO', 'MD', 'RT', 'DT', 'IF', 'MF', 'PFM' , 'GAIA', 'GAIAADMIN');
+	my $system;
+	my @files = ();
+	my %out = ();
+
+	while(1) {
+		print "\n 대상시스템(1:CO, 2:MD, 3:RT, 4:DT, 5:IF, 6:MF, 7:PFM, 8:GAIA, 9:GAIAADMIN, 0:종료) : ";
+		my $line = <STDIN>;
+		chomp $line;
+		if( $line eq '0' ) {
+			last;
+		}
+		next if not $line =~ /^[1-9]$/;
+		$system = $system_list[$line];
+		@files = &get_file_list();
+		if( $#files >= 0 ) {
+			push @{$out{$system}}, @files;
+		}
+	}
+	return \%out;
+}
+
+sub get_file_list {
+	my @out = ();
+	print "\n 대상파일 - 로컬 파일 등록시 Full Path로 입력 바랍니다.\n";
+	while( 1 ) {
+		print "   (파일명, Enter: 입력 종료) : ";
+
+		my $line = <STDIN>;
+		chomp $line;
+		if( $line eq '' ) {
+			last;
+		}
+
+		my $file = $line;
+		$file = $scm->bin(1) . "/$file" if not $file =~ /^\//;
+		debug_print( "checking file $file" );
+
+		if( -f $file ) {
+			$file = $line;
+		}
+		else {
+			print "$line 파일이 존재 하지 않습니다. 다시 입력하세요.\n";
+			next;
+		}
+		push @out, $file;
+	}
+	return @out;
+}
+

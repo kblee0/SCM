@@ -1,0 +1,44 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+my $fname = $ARGV[0];
+
+my %rep;
+my $make_error = '';
+
+open FD, $fname || die "cannot open $fname. $!\n";
+
+$rep{error}     = 0;
+$rep{errord}    = 0;
+$rep{warning}   = 0;
+$rep{lderror}   = 0;
+
+foreach my $line (<FD>) {
+	if( $line =~ /^gmake.*Error/ ) {
+		$rep{error}++;
+		$make_error .= $line;
+	}
+	elsif( $line =~ /:\s+error\s*.*:/ ) {
+		$rep{errord}++;
+	}
+	elsif( $line =~ /:\s+warning\s*.*:/ ) {
+		$rep{warning}++;
+	}
+	elsif( $line =~ /^ld:/ ) {
+		$rep{lderror}++;
+	}
+#	elsif( $line =~ /warning/ ) {
+#		print $line;
+#	}
+}
+
+close FD;
+
+print << "EOF"
+Total build report: Error = $rep{error} Warning = $rep{warning} lderror = $rep{lderror}
+
+$make_error
+EOF

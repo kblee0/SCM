@@ -1,0 +1,10 @@
+#!/bin/ksh
+PROG=${HOME}/bin/$1.sh
+
+if [ -x ${PROG} ]
+then
+	${HOME}/bin/bexec ${PROG}
+	echo ${PROG} is executed.
+else
+	echo ${PROG} does not exist.
+fi

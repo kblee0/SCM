@@ -1,0 +1,16 @@
+#!/bin/ksh
+# load scm config
+. /users/ktf/cscm/root/etc/scmconfig.sh
+
+for p in ${SCM_ROOT}/etc/profile.d/*.sh
+do
+	. ${p}
+done
+
+if [ `basename $0` = 'bash' -o $0 = '-bash' ]
+then
+	for p in ${SCM_ROOT}/etc/profile.d/*.bash
+	do
+		. ${p}
+	done
+fi

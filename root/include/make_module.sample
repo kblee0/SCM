@@ -1,0 +1,32 @@
+.PHONY : all bin lib pre post
+
+-include  /users/crabdev/kblee/deploy/crab010/scm_env.inc
+SCM_PACKAGE=NPFM
+SCM_MODULE=test
+
+SCM_SRC_DIR=/users/crabdev/kblee/pkg/NPFM/v010/test
+
+LIB_NAME=libNPFM_test.a
+
+SRCS=ex2.c sesctest.sc cpptest.cpp ctest.c pcpptest.pc make.inc test.sh df1.cpp testcp.sh test.cfg ex1.c
+OBJS= ex2.o ctest.o ex1.o sesctest.o cpptest.o df1.o pcpptest.o
+
+INCDIRS=-I/users/crabdev/kblee/pkg/NPFM/v010/test -I/users/crabdev/kblee/pkg/NPFM/v010/include
+USER_LIBS+=$(patsubst lib%.a,-l%,$(LIB_NAME))
+
+all : bin
+
+-include /users/ktf/cscm/deploy.conf/crab010.d/make.inc
+-include /users/ktf/cscm/pkg/NPFM/v010/test/NPFM/test/make.inc
+-include /users/crabdev/kblee/pkg/NPFM/v010/test/make.inc
+-include /users/ktf/cscm/deploy.conf/make.inc
+-include /users/ktf/cscm/deploy.conf/make_scm.inc
+
+
+debug :
+	$(DEBUG_PRINT)
+
+pre :
+lib : pre $(LIBS)
+bin : lib $(BINS)
+

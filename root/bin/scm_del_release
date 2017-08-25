@@ -1,0 +1,50 @@
+#!/bin/ksh  -- # -*- perl -*-
+eval 'exec perl -S $0 ${1+"$@"}'
+if 0;
+
+use strict;
+
+use lib "$ENV{'SCM_ROOT'}/lib/perl";
+use SCM::Version;
+use SCM::UTIL;
+use File::Path;
+
+debug_mode( 0 );
+
+my $scm = new SCM::Version;
+
+my $deploy  = shift @ARGV;
+my $version = shift @ARGV;
+
+if( not defined $deploy or not defined $version ) {
+	die "\nUsage : scm_del_release <deployment> <version>\n\n";
+}
+
+$scm->deploy( $deploy );
+$scm->version_name( $version );
+
+if( not $scm->version_name( $version ) ) {
+	die "\n$deploy does not releasable version\n\n";
+}
+
+if( not -f $scm->release_info and not -d $scm->release_dir ) {
+	die "\n$deploy v$version does not released\n\n";
+}
+
+if( -f $scm->release_info ) {
+	if( not unlink( $scm->release_info ) ) {
+		die "\ncannot delete %s. $!\n\n", $scm->release_info;
+	}
+	printf "%s deleted\n", $scm->release_info;
+}
+if( -d $scm->release_dir  ) {
+	if( not rmtree( $scm->release_dir ) ) {
+		die "\ncannot delete %s. $!\n\n", $scm->release_dir;
+	}
+	printf "%s deleted\n", $scm->release_dir;
+}
+
+print "\n$deploy v$version is deleted.\n\n";
+exit 0;
+
+
